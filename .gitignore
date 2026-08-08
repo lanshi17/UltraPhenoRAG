@@ -8,5 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
-benchmark/baseline
+benchmark/baseline/libs
 *.log
+benchmark/data
