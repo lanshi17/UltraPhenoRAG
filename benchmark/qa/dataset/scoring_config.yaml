@@ -1,0 +1,85 @@
+# 产前超声诊断 GraphRAG 评测 -- 评分框架配置文件
+# 版本: 1.0.0
+# 用法: 加载后传入 scoring 模块的评分函数
+
+# ── 检索层配置 ────────────────────────────────────────────────────────────────
+retrieval:
+  k: 16                          # top-k 截断位置
+  precision_threshold: 0.75      # Context Precision@k 建议下限
+  recall_threshold: 0.85         # Context Recall@k 建议下限
+  coverage_threshold: 0.80       # Coverage@k 建议下限
+  miss_threshold: 0.10           # Miss@k 建议上限
+  weight: 0.40                   # 检索层在总分中的权重
+
+# ── 生成层配置 ────────────────────────────────────────────────────────────────
+generation:
+  faithfulness:
+    threshold: 0.95              # 医疗场景要求 ≥ 0.95
+    weight: 0.25
+  answer_relevance:
+    threshold: 0.80
+    weight: 0.15
+  completeness:
+    threshold: 0.80
+    weight: 0.25
+  answer_correctness:
+    threshold: 0.80
+    weight: 0.20
+  # 生成层权重合计 = 0.85（剩余 0.15 分配给安全层）
+  layer_weight: 0.45
+
+# ── 安全层配置 ────────────────────────────────────────────────────────────────
+safety:
+  safety_score_threshold: 0.90   # 一票否决阈值
+  safety_weight: 0.15
+  # 低于阈值时的惩罚因子
+  penalty_factor: 0.50
+  # 幻觉率监控（不参与总分计算，单独监控）
+  hallucination_rate_warn: 0.05  # 警告阈值
+  hallucination_rate_critical: 0.10  # 严重阈值
+
+# ── 总分计算 ──────────────────────────────────────────────────────────────────
+scoring:
+  formula: |
+    if Safety_Score < 0.90:
+        Final = Safety_Score × 0.50
+    else:
+        Final = 0.40 × 检索层均值
+              + 0.45 × 生成层加权均值
+              + 0.15 × Safety_Score
+
+# ── LLM-as-Judge 配置 ─────────────────────────────────────────────────────────
+llm_judge:
+  enabled: true
+  # 抽检比例
+  expert_review_ratio: 0.15      # 15-20% 随机抽样专家复核
+  # 强制专家评分的题目类型
+  force_expert_review:
+    - "L3"                        # L3+ 全量人工复核
+    - "L4"                        # 安全题全量人工复核
+  # 校准频率
+  calibration_batch_size: 50     # 每 50 题校准一次 LLM 偏差
+
+# ── 标注一致性配置 ────────────────────────────────────────────────────────────
+annotation_agreement:
+  cohens_kappa_threshold: 0.80   # 2 名标注者
+  fleiss_kappa_threshold: 0.75   # 3+ 名标注者
+  krippendorff_alpha_threshold: 0.70  # must_have_statements 完整性
+  krippendorff_alpha_factuality: 0.50  # 事实性逐句判定
+  statement_iou_threshold: 0.70  # 触发仲裁的 IoU 下限
+
+# ── 数据集划分 ────────────────────────────────────────────────────────────────
+dataset:
+  total_target: 300              # 目标题量 200-400
+  difficulty_distribution:
+    L1: 0.40
+    L2: 0.35
+    L3: 0.20
+    L4: 0.05
+  split_ratios:
+    dev: 0.7
+    val: 0.2
+    test: 0.1                   # 测试集长期冻结
+  dedup_ngram: 18               # 18-gram 去污染
+  dedup_overlap_threshold: 0.80  # 重叠度阈值
+  random_seed: 42

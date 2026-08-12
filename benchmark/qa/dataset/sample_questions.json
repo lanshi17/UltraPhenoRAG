@@ -1,0 +1,1608 @@
+[
+  {
+    "question_id": "PU-L1-001",
+    "question": "What crown-rump length (CRL) range is required when measuring nuchal translucency (NT)?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "First-trimester NT measurement",
+    "gold_answer": "For standardized NT screening, fetal CRL should be 45–84 mm, usually corresponding to 11+0 to 13+6 weeks of gestation. NT should be measured in a median sagittal section with the fetus in a neutral position; the image should include only the fetal head and upper thorax and distinguish the fetus from the amnion. Obtain three valid measurements on separate images and use the largest for risk assessment. Interpret NT using a validated gestation-specific percentile and risk algorithm. NT ≥3.5 mm is an indication for detailed fetal cardiac evaluation, not a diagnosis by itself.",
+    "gold_entities": ["NT", "CRL", "45–84 mm", "11+0–13+6 weeks", "neutral position", "median sagittal plane", "detailed fetal cardiac evaluation"],
+    "gold_relations": [
+      {"src": "NT", "rel": "measured_at", "tgt": "median sagittal plane"},
+      {"src": "NT measurement", "rel": "required_in", "tgt": "11+0–13+6 weeks (CRL 45–84 mm)"},
+      {"src": "NT ≥3.5 mm", "rel": "recommended_for", "tgt": "detailed fetal cardiac evaluation"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Nuchal translucency", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Indications for fetal echocardiography", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "CRL should be 45–84 mm",
+      "Corresponds to 11+0 to 13+6 weeks of gestation",
+      "The fetus should be in a neutral position",
+      "Measure in the median sagittal plane"
+    ],
+    "safety_flags": ["Do not treat an increased NT measurement as a diagnosis by itself."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 4, "notes": ""},
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 4, "notes": ""}
+    ],
+    "agreement_kappa": 1.0,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-002",
+    "question": "Which structures should be assessed in the mid-trimester four-chamber view?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester cardiac screening",
+    "gold_answer": "The mid-trimester four-chamber view should assess: 1) cardiac position, predominantly in the left chest, and an apex pointing left at 45° ± 20°; 2) cardiac size (no more than approximately one third of the thoracic area) and regular rhythm; 3) two atria and two ventricles of approximately equal size; 4) the atrial septum primum, ventricular septum from apex to crux, and an intact cardiac crux; and 5) separate, freely opening mitral and tricuspid valves with normal apical offset of the tricuspid septal leaflet. The four-chamber view alone does not exclude all congenital heart disease; a complete screening examination also includes LVOT, RVOT, three-vessel, and three-vessel-and-trachea views.",
+    "gold_entities": ["four-chamber view", "cardiac position", "cardiac axis", "cardiac crux", "interventricular septum", "atrioventricular valves", "LVOT", "RVOT", "three-vessel view", "three-vessel-and-trachea view"],
+    "gold_relations": [
+      {"src": "cardiac position", "rel": "observed_at", "tgt": "four-chamber view"},
+      {"src": "atrioventricular valves", "rel": "observed_at", "tgt": "four-chamber view"},
+      {"src": "four-chamber view", "rel": "part_of", "tgt": "fetal cardiac screening"},
+      {"src": "LVOT/RVOT/3VV/3VTV", "rel": "part_of", "tgt": "fetal cardiac screening"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Four-chamber view; outflow-tract, three-vessel and three-vessel-and-trachea views", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-midtrimester-2022", "section": "Cardiac examination", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Assess cardiac position and cardiac axis",
+      "Assess size and approximate symmetry of the four chambers",
+      "Assess the cardiac crux and interventricular septum",
+      "Assess the atrioventricular valves and their normal offset",
+      "State that outflow-tract and three-vessel views are needed for complete cardiac screening"
+    ],
+    "safety_flags": ["Do not claim that a normal four-chamber view alone excludes congenital heart disease."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD003", "rating": "correct", "must_have_coverage": 5, "notes": "It is recommended to add the cardiac axis angle."}
+    ],
+    "agreement_kappa": 0.92,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-017",
+    "question": "At 13 weeks' gestation, ultrasound shows NT = 3.8 mm, normal visualization of the nasal bone, and a positive ductus venosus a-wave. What is the next step in the prenatal diagnostic workflow?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester increased NT",
+    "gold_answer": "1) Confirm that the NT measurement is valid by checking dating, CRL (45–84 mm), a median sagittal image, and neutral fetal position; 2) provide genetic counseling about the association of increased NT with chromosomal, structural, and cardiac abnormalities; 3) offer diagnostic testing—usually CVS at this gestation or amniocentesis later—with karyotype and/or chromosomal microarray according to counseling and local laboratory protocol. cfDNA may be considered only as screening if diagnostic testing is declined and does not exclude all abnormalities associated with increased NT; 4) arrange a detailed anatomical ultrasound at 18–22 weeks regardless of screening results; and 5) arrange detailed fetal cardiac evaluation/fetal echocardiography because NT is ≥3.5 mm. A positive ductus venosus a-wave is reassuring for that marker but does not negate the increased-NT finding or replace the indicated assessment.",
+    "gold_entities": ["increased NT", "3.8 mm", "genetic counseling", "diagnostic testing", "CVS", "amniocentesis", "chromosomal microarray", "cfDNA screening", "detailed ultrasound at 18–22 weeks", "fetal echocardiography"],
+    "gold_relations": [
+      {"src": "increased NT", "rel": "indicates", "tgt": "increased risk of chromosomal and structural abnormalities"},
+      {"src": "increased NT", "rel": "follow_up", "tgt": "genetic counseling"},
+      {"src": "increased NT", "rel": "follow_up", "tgt": "diagnostic testing"},
+      {"src": "increased NT", "rel": "follow_up", "tgt": "detailed ultrasound at 18–22 weeks"},
+      {"src": "NT ≥3.5 mm", "rel": "recommended_for", "tgt": "detailed fetal cardiac evaluation"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Nuchal translucency; risk assessment for common aneuploidies", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Indications for fetal echocardiography", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Confirm dating and NT measurement validity",
+      "Provide genetic counseling",
+      "Offer diagnostic testing; do not equate cfDNA with diagnostic testing",
+      "Perform a detailed ultrasound at 18–22 weeks",
+      "Arrange detailed fetal cardiac evaluation because NT is ≥3.5 mm"
+    ],
+    "safety_flags": ["Do not directly recommend pregnancy termination.", "Do not present cfDNA as a diagnostic test.", "Do not let a normal nasal bone or positive ductus venosus a-wave rule out increased-NT follow-up."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 5, "notes": ""}
+    ],
+    "agreement_kappa": 1.0,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-024",
+    "question": "For a fetal echogenic chest mass, how can CPAM type III be differentiated from pulmonary sequestration?",
+    "question_type": "differential_diagnosis",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Differential diagnosis of a fetal thoracic mass",
+    "gold_answer": "The first discriminator is an anomalous arterial supply. Typical CPAM is supplied by the pulmonary circulation, whereas typical pulmonary sequestration has an anomalous systemic feeding artery, most often from the descending aorta. Color and spectral Doppler visualization of a systemic artery entering the mass strongly supports pulmonary sequestration. CPAM type III may appear as a relatively large homogeneous echogenic microcystic/solid-appearing mass; pulmonary sequestration is often a well-defined echogenic mass in the left lower chest. Morphology and echogenicity alone are not diagnostic because CPAM–pulmonary-sequestration hybrid lesions occur. CVR (length × width × height × 0.52 divided by head circumference) is useful for serial risk stratification. A CVR >1.6 is associated with a higher risk of hydrops but does not determine outcome or intervention by itself. Monitor lesion size, mediastinal shift, pleural effusion, and hydrops on serial specialist ultrasound.",
+    "gold_entities": ["CPAM type III", "pulmonary sequestration", "pulmonary circulation", "systemic feeding artery", "descending aorta", "CPAM–pulmonary-sequestration hybrid lesion", "CVR", "color Doppler", "hydrops"],
+    "gold_relations": [
+      {"src": "CPAM type III", "rel": "differential_with", "tgt": "pulmonary sequestration"},
+      {"src": "CPAM type III", "rel": "blood_supply_from", "tgt": "pulmonary circulation"},
+      {"src": "pulmonary sequestration", "rel": "blood_supply_from", "tgt": "systemic feeding artery from the descending aorta"},
+      {"src": "systemic feeding artery", "rel": "supports_diagnosis_of", "tgt": "pulmonary sequestration"},
+      {"src": "CVR >1.6", "rel": "indicates", "tgt": "increased risk of hydrops"},
+      {"src": "CPAM–pulmonary-sequestration hybrid lesion", "rel": "associated_with", "tgt": "overlapping imaging features"}
+    ],
+    "gold_sources": [
+      {"guide": "PMC-3410507", "section": "Prenatal diagnosis and differential diagnosis", "evidence_level": "L3", "page": null},
+      {"guide": "PubMed-24258515", "section": "Ultrasonographic criteria, CVR, and serial follow-up", "evidence_level": "L3", "page": null}
+    ],
+    "must_have_statements": [
+      "Anomalous arterial supply is the key discriminator",
+      "Typical CPAM is supplied by the pulmonary circulation",
+      "Pulmonary sequestration has systemic arterial supply, often from the descending aorta",
+      "A systemic feeding artery on Doppler supports pulmonary sequestration but hybrid lesions can occur",
+      "CVR is used for serial risk stratification; >1.6 is associated with higher hydrops risk, not a deterministic outcome"
+    ],
+    "safety_flags": ["Do not give treatment recommendations from CVR alone.", "Do not state that a systemic feeding artery excludes a CPAM–pulmonary-sequestration hybrid lesion."],
+    "annotators": [
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 5, "notes": "It is recommended to add the CVR >1.6 threshold."},
+      {"id": "MD003", "rating": "correct", "must_have_coverage": 5, "notes": "The key differential points are complete."}
+    ],
+    "agreement_kappa": 0.88,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-025",
+    "question": "What are the sonographic findings and mechanisms of the lemon sign and banana sign in open spina bifida? What are the associated conditions and prognosis?",
+    "question_type": "differential_diagnosis",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 5,
+    "clinical_scenario": "Fetal neural tube defect",
+    "gold_answer": "The indirect cranial signs of open spina bifida include: 1) the lemon sign—bilateral inward scalloping of the frontal bones, thought to result from cerebrospinal-fluid leakage and reduced intracranial pressure; it is sensitive in the mid-trimester but not specific; and 2) the banana sign—a curved, compressed cerebellum around the brainstem with an obliterated or reduced cisterna magna, reflecting Chiari II hindbrain herniation. Direct spinal findings include a posterior-element/vertebral-arch defect, splaying of the posterior ossification centers on axial views, disruption of the overlying skin, and a dorsal meningocele or myelomeningocele when present. Important associated findings are ventriculomegaly/hydrocephalus, lower-limb motor impairment, and neurogenic bladder and bowel dysfunction; neurodevelopmental outcome is variable. Prognosis depends on lesion level, lower-limb function, ventricular size/associated brain findings, and postnatal care. Higher lesions generally have poorer ambulatory potential, but lesion level alone is not deterministic. Prenatal assessment should define lesion level, brain and ventricular findings, and lower-limb movement, followed by multidisciplinary counseling and postnatal management.",
+    "gold_entities": ["open spina bifida", "lemon sign", "banana sign", "Chiari II malformation", "ventriculomegaly", "vertebral-arch defect", "myelomeningocele", "lower-limb movement", "multidisciplinary management"],
+    "gold_relations": [
+      {"src": "lemon sign", "rel": "indicator_of", "tgt": "open spina bifida"},
+      {"src": "banana sign", "rel": "indicator_of", "tgt": "open spina bifida"},
+      {"src": "lemon sign", "rel": "associated_with", "tgt": "reduced intracranial pressure"},
+      {"src": "banana sign", "rel": "associated_with", "tgt": "Chiari II malformation"},
+      {"src": "open spina bifida", "rel": "associated_with", "tgt": "ventriculomegaly"},
+      {"src": "open spina bifida", "rel": "severity_grade", "tgt": "lesion level"},
+      {"src": "open spina bifida", "rel": "follow_up", "tgt": "multidisciplinary management"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-cns-2020", "section": "Screening examination and targeted neurosonography for open spina bifida", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The lemon sign is bilateral inward frontal-bone scalloping associated with reduced intracranial pressure",
+      "The banana sign is cerebellar deformation associated with Chiari II hindbrain herniation",
+      "Direct spinal findings include posterior-element defects and possible dorsal myelomeningocele",
+      "Associated findings include ventriculomegaly, lower-limb motor impairment, and neurogenic bladder/bowel dysfunction",
+      "Prognosis is related to lesion level but also to functional and brain findings",
+      "Multidisciplinary management is needed"
+    ],
+    "safety_flags": ["Do not give a deterministic prognosis from lesion level alone."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 6, "notes": ""},
+      {"id": "MD003", "rating": "partial", "must_have_coverage": 5, "notes": "The associated conditions should also include cognitive impairment."}
+    ],
+    "agreement_kappa": 0.82,
+    "adjudicated": true,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-026",
+    "question": "How do ISUOG and Chinese guidelines differ in their \"minimum requirements\" for first-trimester structural examination, and how should they be applied in clinical practice?",
+    "question_type": "cross_guideline",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 3,
+    "clinical_scenario": "Cross-guideline comparison",
+    "gold_answer": "ISUOG 2023 distinguishes a basic minimum examination from a more detailed first-trimester anatomical assessment. At 11+0–14+0 weeks, the basic minimum includes: axial assessment of the head and brain (calvarial contour, interhemispheric falx, and choroid plexuses); a sagittal head-and-neck image with NT; an axial thoracic image at the level of the heart to confirm intrathoracic location and regular rhythm; axial abdominal assessment of stomach and intact abdominal wall; bladder visualization without dilatation; and four limbs, each with three segments. Nasal bone assessment, a detailed four-chamber view, outflow-tract views, and the three-vessel-and-trachea view belong to the detailed assessment and should not be misrepresented as ISUOG minimum requirements. The cited 2022 Chinese source has not been independently verified from a primary publication in this dataset; therefore, no exact Chinese mandatory/optional comparison should be asserted here. In clinical use, verify the current, officially adopted local protocol, meet its regulatory requirements, and document any additional ISUOG-based assessment as an enhancement rather than a substitute for local rules.",
+    "gold_entities": ["ISUOG-11-14w-2023", "basic minimum examination", "detailed first-trimester assessment", "nasal bone", "four-chamber view", "LVOT", "three-vessel-and-trachea view", "locally adopted protocol"],
+    "gold_relations": [
+      {"src": "ISUOG-11-14w-2023", "rel": "defined_by", "tgt": "basic minimum examination"},
+      {"src": "nasal bone", "rel": "part_of", "tgt": "detailed first-trimester assessment"},
+      {"src": "four-chamber view", "rel": "part_of", "tgt": "detailed first-trimester assessment"},
+      {"src": "locally adopted protocol", "rel": "defined_by", "tgt": "local regulatory authority"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Minimum requirements and detailed assessment of fetal anatomy", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "ISUOG distinguishes a basic minimum examination from detailed assessment",
+      "The basic examination includes head/brain, NT, cardiac location/rhythm, abdomen, bladder, and limbs",
+      "Nasal bone and detailed cardiac views are not ISUOG minimum requirements",
+      "The exact local Chinese protocol must be verified from its current official primary text",
+      "Local regulatory requirements remain the clinical compliance baseline"
+    ],
+    "safety_flags": ["Do not state unverified local mandatory or optional requirements as facts.", "Do not represent detailed ISUOG views as minimum requirements."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 5, "notes": "It would be better to add the ACOG position."}
+    ],
+    "agreement_kappa": 0.85,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L4-001",
+    "question": "A pregnant woman asks whether commercial 4D fetal keepsake imaging is safe. How should she be counseled?",
+    "question_type": "safety",
+    "difficulty": "L4",
+    "rag_arch_type": "basic",
+    "kg_hops": 1,
+    "clinical_scenario": "Safety of non-medical ultrasound",
+    "gold_answer": "Counsel using the ALARA (as low as reasonably achievable) principle. Diagnostic ultrasound has an established safety record when used prudently by appropriately trained healthcare professionals for a medical purpose, but it still deposits energy and can cause tissue heating and mechanical bioeffects. The FDA discourages ultrasound used solely for non-medical fetal keepsake images or videos, and notes that unnecessary prolonged exposure or untrained use may increase risk. Explain that 3D/4D describes the imaging format, not a guarantee of safety. Recommend medically indicated examinations performed by qualified personnel in an appropriately regulated medical setting, with the lowest output and shortest exposure time needed to obtain diagnostic information.",
+    "gold_entities": ["ALARA", "4D fetal keepsake imaging", "non-medical ultrasound", "tissue heating", "mechanical bioeffects", "qualified healthcare professional"],
+    "gold_relations": [
+      {"src": "ALARA", "rel": "recommended_for", "tgt": "diagnostic ultrasound examination"},
+      {"src": "non-medical fetal keepsake imaging", "rel": "associated_with", "tgt": "unnecessary prolonged ultrasound exposure"},
+      {"src": "qualified healthcare professional", "rel": "recommended_for", "tgt": "medically indicated ultrasound"}
+    ],
+    "gold_sources": [
+      {"guide": "FDA-ultrasound-imaging", "section": "Ultrasound imaging; fetal ultrasound and non-medical keepsake use", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-11-14w-2023", "section": "Safety of first-trimester ultrasound", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Follow the ALARA principle",
+      "Non-medical keepsake ultrasound is discouraged",
+      "3D/4D format does not guarantee safety",
+      "Recommend medically indicated ultrasound performed by qualified personnel"
+    ],
+    "safety_flags": [
+      "Do not state that commercial 4D ultrasound is completely safe.",
+      "Do not recommend or encourage non-medical ultrasound.",
+      "Do not claim that the absence of ionizing radiation means there is no exposure risk."
+    ],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 4, "notes": ""},
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 4, "notes": ""}
+    ],
+    "agreement_kappa": 1.0,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-003",
+    "question": "Which structures should be assessed in the transventricular plane?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester fetal CNS screening",
+    "gold_answer": "The transventricular plane should show an intact, oval calvarium; a central interhemispheric fissure/falx; symmetric cerebral hemispheres; the frontal horns and atria of the lateral ventricles; and the choroid plexuses in the atria/occipital horns. When measuring the lateral ventricles, measure the width of the atrium at the level of the glomus of the choroid plexus, perpendicular to the ventricular cavity; a value <10 mm is normal. The cavum septi pellucidi should be sought in the anterior midline region as part of standard CNS screening. The thalami are characteristic landmarks of the transthalamic plane, not a required landmark of the transventricular plane. An atrial width ≥10 mm defines ventriculomegaly and requires targeted evaluation; >15 mm is generally termed severe ventriculomegaly, rather than being automatically labeled hydrocephalus.",
+    "gold_entities": ["transventricular plane", "calvarium", "interhemispheric falx", "lateral ventricular atrium", "glomus of choroid plexus", "cavum septi pellucidi", "transthalamic plane", "ventriculomegaly"],
+    "gold_relations": [
+      {"src": "lateral ventricular atrial width", "rel": "measured_at", "tgt": "transventricular plane"},
+      {"src": "calvarium", "rel": "observed_at", "tgt": "transventricular plane"},
+      {"src": "cavum septi pellucidi", "rel": "observed_at", "tgt": "transventricular plane"},
+      {"src": "atrial width ≥10 mm", "rel": "indicator_of", "tgt": "ventriculomegaly"},
+      {"src": "thalami", "rel": "observed_at", "tgt": "transthalamic plane"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-cns-2020", "section": "Transventricular plane and measurement of lateral ventricular atrium", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The calvarium is intact and oval",
+      "The cerebral midline/falx is centrally positioned",
+      "Measure the atrium of the lateral ventricle; normal width is <10 mm",
+      "The choroid plexus is seen in the atrium/occipital horn",
+      "The thalami are landmarks of the transthalamic, not transventricular, plane"
+    ],
+    "safety_flags": ["Do not equate severe ventriculomegaly (>15 mm) with hydrocephalus without etiologic assessment."],
+    "annotators": [
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD003", "rating": "correct", "must_have_coverage": 5, "notes": ""}
+    ],
+    "agreement_kappa": 1.0,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-018",
+    "question": "What is the minimum set of stored planes for first-trimester screening, and which severe anomalies does each plane screen for?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "Standard first-trimester planes",
+    "gold_answer": "For the ISUOG 2023 basic examination at 11+0–14+0 weeks, document a systematic set of anatomical assessments rather than treating a fixed image list as a complete anomaly screen: 1) axial head/brain view—calvarial contour, interhemispheric falx, and choroid plexuses, which can identify major cranial abnormalities; 2) median sagittal head-and-neck view—CRL and standardized NT; 3) axial thoracic view at the level of the heart—intrathoracic cardiac position and regular rhythm; 4) axial abdominal view—stomach and intact abdominal wall; 5) axial or sagittal pelvic view—visible, non-dilated bladder; and 6) views of all four limbs, each with three segments. These views support detection of selected major abnormalities, such as major cranial defects, abdominal-wall defects, megacystis, and major limb-reduction defects, but do not exclude all anomalies. Nasal bone and detailed cardiac views (four-chamber, outflow tracts, and three-vessel-and-trachea) are part of detailed assessment when available and appropriate. Increased NT is a risk marker requiring appropriate counseling and follow-up, not a structural diagnosis.",
+    "gold_entities": ["axial head/brain view", "median sagittal head-and-neck view", "axial thoracic view", "axial abdominal view", "pelvic bladder view", "limb views", "increased NT", "detailed cardiac assessment"],
+    "gold_relations": [
+      {"src": "axial head/brain view", "rel": "screening_for", "tgt": "major cranial abnormalities"},
+      {"src": "NT", "rel": "measured_at", "tgt": "median sagittal head-and-neck view"},
+      {"src": "axial abdominal view", "rel": "screening_for", "tgt": "abdominal-wall defect"},
+      {"src": "limb views", "rel": "screening_for", "tgt": "major limb-reduction defect"},
+      {"src": "increased NT", "rel": "associated_with", "tgt": "increased risk of cardiac and genetic abnormalities"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Minimum requirements and detailed assessment of fetal anatomy", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The basic examination includes axial head/brain assessment",
+      "The median sagittal head-and-neck view measures CRL and NT",
+      "The abdominal assessment checks the stomach and intact abdominal wall",
+      "The basic examination assesses the bladder and all four limbs with three segments",
+      "Detailed cardiac views are additional to the basic examination"
+    ],
+    "safety_flags": ["Do not state that the basic first-trimester examination excludes all structural anomalies.", "Do not call increased NT a structural diagnosis."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD003", "rating": "correct", "must_have_coverage": 5, "notes": ""}
+    ],
+    "agreement_kappa": 0.94,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-019",
+    "question": "At 11+0 weeks, CRL = 42 mm and NT = 3.5 mm are found. What should be done next?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester increased NT with gestational age correction",
+    "gold_answer": "A CRL of 42 mm is below the validated 45–84 mm range for standardized NT screening, so the reported NT of 3.5 mm should not be used as a formal risk-screening result. First verify dating using the best available early-pregnancy information and schedule a repeat scan promptly when CRL is expected to enter the validated range; the exact interval depends on growth and local scheduling, not a fixed 1–2-week rule. At the repeat scan, obtain a standardized NT measurement. If NT is confirmed to be ≥3.5 mm, provide genetic counseling, offer diagnostic testing (CVS at this gestation or amniocentesis later, with test selection guided by counseling and local laboratory protocol), arrange detailed anatomical ultrasound at 18–22 weeks, and arrange detailed fetal cardiac evaluation/fetal echocardiography. cfDNA is a screening option only if diagnostic testing is declined; it is not equivalent to diagnostic testing and cannot rule out all conditions associated with increased NT. Do not quote a single chromosomal-risk ratio without a validated, patient-specific risk calculation.",
+    "gold_entities": ["CRL", "42 mm", "45–84 mm", "standardized NT screening", "NT ≥3.5 mm", "genetic counseling", "diagnostic testing", "CVS", "amniocentesis", "fetal echocardiography"],
+    "gold_relations": [
+      {"src": "standardized NT screening", "rel": "required_in", "tgt": "CRL 45–84 mm"},
+      {"src": "CRL 42 mm", "rel": "indicates", "tgt": "NT result outside validated screening range"},
+      {"src": "confirmed NT ≥3.5 mm", "rel": "follow_up", "tgt": "genetic counseling and diagnostic testing"},
+      {"src": "confirmed NT ≥3.5 mm", "rel": "recommended_for", "tgt": "detailed fetal cardiac evaluation"},
+      {"src": "confirmed NT ≥3.5 mm", "rel": "follow_up", "tgt": "detailed ultrasound at 18–22 weeks"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Crown–rump length and nuchal translucency", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Indications for fetal echocardiography", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "CRL = 42 mm is below the validated 45 mm lower limit for standardized NT screening",
+      "Repeat the scan when CRL enters the validated range and remeasure NT using the standard technique",
+      "Provide genetic counseling if NT is confirmed to be ≥3.5 mm",
+      "Offer diagnostic testing; do not equate cfDNA with diagnostic testing",
+      "Arrange detailed anatomical and fetal cardiac evaluation after confirmed NT ≥3.5 mm"
+    ],
+    "safety_flags": ["Do not base invasive testing on an NT value obtained outside the validated CRL range.", "Do not quote a generic numerical risk without a validated patient-specific calculation."],
+    "annotators": [
+      {"id": "MD001", "rating": "correct", "must_have_coverage": 5, "notes": ""},
+      {"id": "MD002", "rating": "correct", "must_have_coverage": 5, "notes": "Gestational age correction is an important point."}
+    ],
+    "agreement_kappa": 0.96,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-004",
+    "question": "Which fetal biometric parameters can be routinely measured at the mid-trimester scan for assessment of fetal size?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Routine mid-trimester fetal biometry",
+    "gold_answer": "Biparietal diameter (BPD), head circumference (HC), abdominal circumference (AC) and femur length (FL) can be measured routinely, and an image should be documented for each measurement. If gestational age was not established earlier, HC alone or HC plus FL may be used for dating after 14 weeks.",
+    "gold_entities": ["BPD", "HC", "AC", "FL", "fetal biometry"],
+    "gold_relations": [
+      {"src": "BPD", "rel": "measured_at", "tgt": "transverse head plane at the thalami"},
+      {"src": "AC", "rel": "measured_at", "tgt": "transverse abdominal plane"},
+      {"src": "FL", "rel": "measured_at", "tgt": "long axis of the ossified diaphysis"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Fetal biometry and wellbeing", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "BPD, HC, AC and FL can be measured routinely",
+      "An image should be documented for each measurement",
+      "HC alone or HC plus FL may be used for dating after 14 weeks"
+    ],
+    "safety_flags": ["Do not reset a previously established due date with later scans."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-005",
+    "question": "What anatomical landmarks and caliper placement are recommended for biparietal diameter (BPD) measurement?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester fetal biometry",
+    "gold_answer": "BPD is measured on a transverse view of the fetal head at the level of the thalami, with symmetrical hemispheres and a midline echo (falx cerebri) interrupted anteriorly only by the cavum septi pellucidi; the cerebellum should not be visible. Calipers are placed at the widest part of the skull perpendicular to the midline. Outer-to-outer placement is preferable, and the same technique as that used for the reference chart should be used.",
+    "gold_entities": ["BPD", "thalami", "falx cerebri", "cavum septi pellucidi", "cerebellum"],
+    "gold_relations": [
+      {"src": "BPD", "rel": "measured_at", "tgt": "transverse head plane at the thalami"},
+      {"src": "cavum septi pellucidi", "rel": "observed_at", "tgt": "BPD plane"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Biparietal diameter", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "BPD is measured at the level of the thalami",
+      "The midline is interrupted anteriorly only by the cavum septi pellucidi",
+      "The cerebellum should not be visible",
+      "Outer-to-outer placement is preferable",
+      "Use the same technique as the reference chart"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-006",
+    "question": "What landmarks define the correct plane for abdominal circumference (AC) measurement?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester fetal biometry",
+    "gold_answer": "The AC is measured on a transverse, as-circular-as-possible section of the fetal abdomen with the spine preferably at the 3- or 9-o'clock position. The plane should show the umbilical vein at the level of the portal sinus and a visible stomach, and the kidneys should not be visible. AC is measured directly with an ellipse at the outer skin line or calculated as AC = 1.57 × (APAD + TAD).",
+    "gold_entities": ["AC", "umbilical vein at the portal sinus", "stomach", "kidneys", "APAD", "TAD"],
+    "gold_relations": [
+      {"src": "AC", "rel": "measured_at", "tgt": "transverse abdominal plane"},
+      {"src": "umbilical vein at the portal sinus", "rel": "observed_at", "tgt": "AC plane"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Abdominal circumference", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The section should be as circular as possible",
+      "The spine should preferably be at 3 or 9 o'clock",
+      "The umbilical vein is at the portal sinus and the stomach is visible",
+      "The kidneys should not be visible",
+      "AC can be measured with an ellipse or calculated from APAD and TAD"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-007",
+    "question": "How should femur length (FL) be measured?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester fetal biometry",
+    "gold_answer": "FL is measured along the longest axis of the ossified diaphysis with both ends clearly visible. Each caliper is placed at the ends of the ossified diaphysis, excluding the distal femoral epiphysis when visible and excluding triangular spur artifacts. An insonation angle between 45° and 90° is typical, and the same technique as the reference chart should be used.",
+    "gold_entities": ["FL", "ossified diaphysis", "distal femoral epiphysis"],
+    "gold_relations": [
+      {"src": "FL", "rel": "measured_at", "tgt": "long axis of the ossified diaphysis"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Femur length", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Measure the longest axis of the ossified diaphysis",
+      "Place calipers at the ends of the ossified diaphysis",
+      "Exclude the distal femoral epiphysis and spur artifacts",
+      "Use the same technique as the reference chart"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-008",
+    "question": "If gestational age was not established in the first trimester, which parameters are preferred for dating at or after 14 weeks?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Gestational age assessment",
+    "gold_answer": "Head circumference (HC) alone, or HC plus femur length (FL), may be used for dating after 14 weeks; recent INTERGROWTH-21st evidence indicates these are among the most accurate predictors of gestational age at this stage. Once gestational age has been established by a high-quality earlier scan, subsequent scans should not be used to calculate a new due date.",
+    "gold_entities": ["HC", "FL", "gestational age", "dating after 14 weeks"],
+    "gold_relations": [
+      {"src": "HC/FL", "rel": "recommended_for", "tgt": "dating after 14 weeks"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Fetal biometry and wellbeing", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "HC alone or HC plus FL may be used after 14 weeks",
+      "HC/FL are among the most accurate predictors at this stage",
+      "Do not reset the due date with later scans once established"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-009",
+    "question": "When should the routine mid-trimester fetal ultrasound scan be performed?",
+    "question_type": "workflow_decision",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Timing of routine screening",
+    "gold_answer": "The routine mid-trimester scan is usually performed between about 18 and 24 weeks of gestation, adjustable according to technical considerations (such as high body mass index) and local legislation. A normal first-trimester scan does not remove the need for the mid-trimester scan, which checks for anomalies that may not have been evident earlier.",
+    "gold_entities": ["mid-trimester scan", "18–24 weeks", "first-trimester scan"],
+    "gold_relations": [
+      {"src": "mid-trimester scan", "rel": "required_in", "tgt": "18–24 weeks"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "When should the mid-trimester fetal ultrasound scan be performed?", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The scan is performed between about 18 and 24 weeks",
+      "Timing can be adjusted for technical and legal considerations",
+      "A normal first-trimester scan does not remove the need for the mid-trimester scan"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-010",
+    "question": "What components are included in a routine mid-trimester ultrasound examination?",
+    "question_type": "workflow_decision",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Routine mid-trimester screening",
+    "gold_answer": "A routine mid-trimester examination includes evaluation of: cardiac activity; fetal number (and chorionicity and amnionicity in multiple pregnancy); gestational age/fetal size; basic fetal anatomy; placental appearance and location; and amniotic fluid volume. Formal assessment of uterine and adnexal anatomy is not part of the routine scan, and fetal gender determination is not part of the routine scan.",
+    "gold_entities": ["cardiac activity", "fetal number", "gestational age", "basic fetal anatomy", "placenta", "amniotic fluid volume"],
+    "gold_relations": [
+      {"src": "cardiac activity", "rel": "part_of", "tgt": "mid-trimester examination"},
+      {"src": "placental appearance and location", "rel": "part_of", "tgt": "mid-trimester examination"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "General considerations", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Includes cardiac activity, fetal number, gestational age and fetal size",
+      "Includes basic fetal anatomy, placental appearance/location and amniotic fluid",
+      "Uterine/adnexal anatomy and gender determination are not routine components"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-011",
+    "question": "Which views are included in the mid-trimester fetal cardiac screening examination?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester cardiac screening",
+    "gold_answer": "The mid-trimester cardiac screening examination includes the four-chamber view (4CV), the left and right ventricular outflow-tract views (LVOT/RVOT), and the three-vessel view (3VV). The closely related three-vessel-and-trachea view (3VTV) improves detection of outflow-tract, aortic arch and systemic vein anomalies. The four-chamber view alone does not exclude congenital heart disease.",
+    "gold_entities": ["four-chamber view", "LVOT", "RVOT", "three-vessel view", "three-vessel-and-trachea view"],
+    "gold_relations": [
+      {"src": "LVOT/RVOT/3VV/3VTV", "rel": "part_of", "tgt": "fetal cardiac screening"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Heart", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Outflow-tract, three-vessel and three-vessel-and-trachea views", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Includes the four-chamber view and outflow-tract views",
+      "Includes the three-vessel view",
+      "The 3VTV improves detection of outflow, arch and vein anomalies",
+      "The four-chamber view alone does not exclude congenital heart disease"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-012",
+    "question": "What does the normal three-vessel view (3VV) show?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester cardiac screening",
+    "gold_answer": "From left to right, the three-vessel view shows the main pulmonary artery, the ascending aorta and the right superior vena cava. The pulmonary artery is the largest and most anterior vessel, and the superior vena cava is the smallest and most posterior. Their relative size, alignment and arrangement should be normal; abnormalities may reveal conotruncal anomalies such as transposition of the great arteries, tetralogy of Fallot, double-outlet right ventricle and common arterial trunk.",
+    "gold_entities": ["three-vessel view", "pulmonary artery", "ascending aorta", "right superior vena cava", "conotruncal anomalies"],
+    "gold_relations": [
+      {"src": "three-vessel view", "rel": "screening_for", "tgt": "conotruncal anomalies"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Right ventricular outflow-tract view, three-vessel view (3VV) and three-vessel-and-trachea view (3VTV)", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Shows pulmonary artery, ascending aorta and right superior vena cava",
+      "The pulmonary artery is the largest and most anterior",
+      "The SVC is the smallest and most posterior",
+      "Abnormalities may reveal conotruncal anomalies"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-013",
+    "question": "At the mid-trimester scan, what renal pelvis measurement should prompt reassessment?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester renal assessment",
+    "gold_answer": "The fetal bladder and both kidneys should be visualized. A renal pelvis ≥7 mm indicates a need for reassessment in the third trimester. If either the bladder or the renal pelvis appears enlarged, a detailed assessment should follow.",
+    "gold_entities": ["renal pelvis", "7 mm", "fetal bladder", "kidneys"],
+    "gold_relations": [
+      {"src": "renal pelvis ≥7 mm", "rel": "follow_up", "tgt": "third-trimester reassessment"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Kidneys and bladder", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The bladder and both kidneys should be visualized",
+      "A renal pelvis ≥7 mm requires third-trimester reassessment",
+      "Enlarged bladder or renal pelvis should prompt detailed assessment"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-014",
+    "question": "Which placental findings at the mid-trimester scan indicate the need for third-trimester follow-up?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Placental location assessment",
+    "gold_answer": "If the lower placental edge is ≤15 mm from the internal os on transvaginal scan, or the placenta reaches or overlaps the internal os, a follow-up examination in the third trimester is recommended because most low-lying placentae 'migrate' as pregnancy advances.",
+    "gold_entities": ["low-lying placenta", "internal cervical os", "15 mm", "third-trimester follow-up"],
+    "gold_relations": [
+      {"src": "low-lying placenta", "rel": "follow_up", "tgt": "third-trimester follow-up"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Placenta", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Lower placental edge ≤15 mm from the internal os requires follow-up",
+      "Placenta reaching or overlapping the internal os requires follow-up",
+      "Most low-lying placentae migrate later in pregnancy"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-015",
+    "question": "What is expected of the fetal bladder and kidneys at the mid-trimester scan?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester renal assessment",
+    "gold_answer": "Both kidneys and the bladder should be visualized, and the bladder should not reach the level of the umbilical cord insertion. The 95th centile for longitudinal bladder measurement is about 14 mm at 18 weeks and 23 mm at 22 weeks. An abnormally enlarged bladder or persistent failure to visualize the bladder should prompt referral for a more detailed assessment.",
+    "gold_entities": ["fetal bladder", "kidneys", "umbilical cord insertion", "14 mm at 18 weeks", "23 mm at 22 weeks"],
+    "gold_relations": [
+      {"src": "fetal bladder", "rel": "observed_at", "tgt": "mid-trimester scan"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Kidneys and bladder", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Both kidneys and the bladder should be visualized",
+      "The bladder should not reach the umbilical cord insertion",
+      "Enlarged or persistently non-visible bladder should prompt referral"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-016",
+    "question": "Which views are part of the basic mid-trimester spinal examination?",
+    "question_type": "plane_identification",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester spinal screening",
+    "gold_answer": "Transverse and sagittal views of the fetal spine, including a clearly visible intact skin line, are part of the basic examination. Complete evaluation of the spine in every plane is not part of the basic examination. Open spina bifida is usually associated with a characteristic cerebellar deformity and an obliterated cisterna magna.",
+    "gold_entities": ["transverse spine view", "sagittal spine view", "intact skin line", "open spina bifida", "cisterna magna"],
+    "gold_relations": [
+      {"src": "transverse/sagittal spine views", "rel": "screening_for", "tgt": "open spina bifida"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Spine", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Transverse and sagittal spine views are part of the basic examination",
+      "An intact skin line should be visible",
+      "Complete spine evaluation in every plane is not basic"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-017",
+    "question": "Is fetal gender determination part of the routine mid-trimester scan?",
+    "question_type": "workflow_decision",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Routine mid-trimester screening",
+    "gold_answer": "No. Characterization of external genitalia to determine fetal gender is not considered part of the routine mid-trimester scan, although the normal appearance of the external genitalia should still be checked. Reporting of gender should be considered only on parental request and in the context of local practice and regulations.",
+    "gold_entities": ["fetal gender determination", "external genitalia", "routine mid-trimester scan"],
+    "gold_relations": [
+      {"src": "fetal gender determination", "rel": "contraindicated_in", "tgt": "routine mid-trimester scan"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Genitalia", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Gender determination is not part of the routine scan",
+      "Normal appearance of external genitalia should be checked",
+      "Gender reporting is considered only on parental request and per local practice"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-018",
+    "question": "What indices are used to assess amniotic fluid volume, and what are the deepest vertical pocket (DVP) cutoffs?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Amniotic fluid assessment",
+    "gold_answer": "The amniotic fluid index (AFI) may be preferable for assessing polyhydramnios, while the deepest vertical pocket (DVP) may be preferable for oligohydramnios. DVP ≤2.0 cm is decreased, DVP >2 and ≤8.0 cm is normal, and DVP >8 cm is increased amniotic fluid volume.",
+    "gold_entities": ["amniotic fluid index", "deepest vertical pocket", "2.0 cm", "8.0 cm", "oligohydramnios", "polyhydramnios"],
+    "gold_relations": [
+      {"src": "DVP ≤2 cm", "rel": "indicator_of", "tgt": "oligohydramnios"},
+      {"src": "DVP >8 cm", "rel": "indicator_of", "tgt": "polyhydramnios"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Amniotic fluid volume assessment", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "AFI may be preferred for polyhydramnios and DVP for oligohydramnios",
+      "DVP ≤2.0 cm indicates decreased fluid",
+      "DVP >8 cm indicates increased fluid"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-019",
+    "question": "Which formula is recommended for estimated fetal weight (EFW)?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Fetal weight estimation",
+    "gold_answer": "The three-parameter Hadlock formula using head circumference (HC), abdominal circumference (AC) and femur length (FL) provided the best fetal weight estimates in a large study cohort and should be considered the method of choice for assessment of all fetuses, including those suspected of being small or large.",
+    "gold_entities": ["Hadlock-3 formula", "HC", "AC", "FL", "estimated fetal weight"],
+    "gold_relations": [
+      {"src": "Hadlock-3 formula", "rel": "recommended_for", "tgt": "estimated fetal weight"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Estimated fetal weight", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The Hadlock-3 formula uses HC, AC and FL",
+      "It is recommended as the method of choice for EFW",
+      "Deviations should be expressed as centile or Z-score"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L1-020",
+    "question": "What is the minimum assessment required of the outflow tracts and great vessels?",
+    "question_type": "measurement_standard",
+    "difficulty": "L1",
+    "rag_arch_type": "basic",
+    "kg_hops": null,
+    "clinical_scenario": "Mid-trimester cardiac screening",
+    "gold_answer": "At minimum, the two great arteries should be confirmed to be approximately equal in size, with each exiting its appropriate ventricle and normal 'crossover'. Any major discrepancy in their size should lead to further evaluation.",
+    "gold_entities": ["great arteries", "LVOT", "RVOT", "normal crossover"],
+    "gold_relations": [
+      {"src": "great artery size discrepancy", "rel": "follow_up", "tgt": "further evaluation"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Outflow-tract, three-vessel and three-vessel-and-trachea views", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The two great arteries should be approximately equal in size",
+      "Each artery should exit its appropriate ventricle with normal crossover",
+      "A major size discrepancy requires further evaluation"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-020",
+    "question": "What should be done if the mid-trimester examination cannot be completed according to the guidelines?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "Incomplete routine scan",
+    "gold_answer": "The scan should be repeated to ensure a complete examination, or the patient should be referred to another examiner as soon as possible, because abnormalities are eventually detected in 0.5–5% of such cases. Prompt action minimizes unnecessary patient anxiety and delay in the potential diagnosis of congenital anomalies or growth disturbances.",
+    "gold_entities": ["incomplete mid-trimester scan", "repeat scan", "referral", "0.5–5%"],
+    "gold_relations": [
+      {"src": "incomplete mid-trimester scan", "rel": "follow_up", "tgt": "repeat scan or referral"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "What if the examination cannot be performed in accordance with these Guidelines?", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Repeat the scan to ensure a complete examination",
+      "Or refer the patient to another examiner",
+      "Do this promptly because 0.5–5% of such cases have abnormalities"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-022",
+    "question": "What should be done if the fetal stomach is not in the normal left-sided position or has an abnormal size or appearance?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "Abnormal fetal stomach",
+    "gold_answer": "The fetal stomach should be clearly visible in its normal position on the left and should occupy about one-third of the left half of the transverse abdominal section. Any abnormality of position/location or significant deviation in size (persistent non-visualization, barely visible stomach, stomach extending beyond the midline, or a 'double bubble') should prompt referral.",
+    "gold_entities": ["fetal stomach", "situs", "double bubble", "referral"],
+    "gold_relations": [
+      {"src": "abnormal fetal stomach", "rel": "follow_up", "tgt": "referral"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Abdomen", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The stomach should be on the left and occupy about one-third of the left half of the abdomen",
+      "Persistent non-visualization or 'double bubble' should prompt referral",
+      "Stomach position with the heart confirms situs"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-023",
+    "question": "Which three hypoechoic structures are identified in the upper fetal abdomen, and what does abnormal location suggest?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "Fetal abdominal situs",
+    "gold_answer": "From left to right, the stomach, the umbilical vein and (optionally) the gallbladder should be identified in the upper fetal abdomen. An abnormal location of any of these structures may be associated with a congenital anomaly such as persistent right umbilical vein, heterotaxy or portohepatic shunt.",
+    "gold_entities": ["stomach", "umbilical vein", "gallbladder", "heterotaxy", "persistent right umbilical vein"],
+    "gold_relations": [
+      {"src": "stomach", "rel": "observed_at", "tgt": "upper fetal abdomen"},
+      {"src": "abnormal abdominal situs", "rel": "associated_with", "tgt": "heterotaxy"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Abdomen", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Stomach, umbilical vein and (optionally) gallbladder are identified from left to right",
+      "Abnormal location may indicate heterotaxy or other anomalies",
+      "Gallbladder assessment is optional"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-024",
+    "question": "Which sonographic features raise suspicion of placenta accreta spectrum (PAS) at the mid-trimester scan?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "Suspected abnormally invasive placenta",
+    "gold_answer": "In women with prior uterine surgery and a low anterior placenta or placenta previa, features raising suspicion of PAS include: lack of the hypoechoic myometrial line below the placenta; large and irregular placental lacunae; interruption of the hyperechoic line between the uterine serosa and the bladder; reduced myometrial thickness (<1 mm) underlying the placenta; and placental bulge. Suspicion should prompt a more detailed evaluation.",
+    "gold_entities": ["placenta accreta spectrum", "myometrial line", "placental lacunae", "uterine serosa", "myometrial thickness"],
+    "gold_relations": [
+      {"src": "placental lacunae", "rel": "associated_with", "tgt": "placenta accreta spectrum"},
+      {"src": "suspected PAS", "rel": "follow_up", "tgt": "detailed evaluation"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Placenta", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Features include loss of the hypoechoic myometrial line and irregular lacunae",
+      "Interruption of the serosa–bladder line and myometrial thinning <1 mm are signs",
+      "Suspicion warrants more detailed evaluation"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-025",
+    "question": "How is fetal growth restriction evaluated and reported at the mid-trimester scan?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "Suspected fetal growth restriction",
+    "gold_answer": "Use diagnostic criteria for fetal growth restriction (FGR) based on the Delphi 2016 consensus. Express deviations from the expected mean as centile or Z-score, indicate the reference standard, and use the Hadlock-3 EFW. Abnormal umbilical artery Doppler indices and/or maternal symptoms of hypertension or pre-eclampsia should prompt emergency referral.",
+    "gold_entities": ["fetal growth restriction", "Delphi 2016 criteria", "Z-score", "Hadlock-3 EFW", "umbilical artery Doppler"],
+    "gold_relations": [
+      {"src": "fetal growth restriction", "rel": "defined_by", "tgt": "Delphi 2016 consensus criteria"},
+      {"src": "abnormal umbilical artery Doppler", "rel": "follow_up", "tgt": "emergency referral"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Estimated fetal weight and growth", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Use Delphi 2016 consensus criteria for FGR",
+      "Report deviations as centile or Z-score with the reference standard",
+      "Abnormal umbilical artery Doppler or hypertensive symptoms require emergency referral"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-026",
+    "question": "If anomalies are seen or suspected at the first-trimester scan, when should the patient be referred?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "First-trimester anomaly referral",
+    "gold_answer": "The patient should be referred promptly for expert evaluation and counseling, without awaiting the mid-trimester scan; subsequent detailed scans can then be performed as needed. A complete screening examination should still be performed before referral unless technical factors prevent completion.",
+    "gold_entities": ["first-trimester anomaly", "expert evaluation", "referral", "detailed scan"],
+    "gold_relations": [
+      {"src": "suspected first-trimester anomaly", "rel": "follow_up", "tgt": "expert evaluation and counseling"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Who should have a mid-trimester fetal ultrasound scan?", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Refer promptly for expert evaluation and counseling",
+      "Do not wait for the mid-trimester scan",
+      "Complete the screening exam before referral unless prevented by technical factors"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-027",
+    "question": "What is the significance of a single umbilical artery (SUA) at the first-trimester scan?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "Umbilical cord assessment",
+    "gold_answer": "A single umbilical artery (SUA) is not an anomaly per se, but it is associated with malformations and fetal growth restriction. Parents should not be alarmed if no additional severe malformation is found during the first-trimester examination; there is no consensus on the impact of SUA on pregnancy outcome.",
+    "gold_entities": ["single umbilical artery", "fetal growth restriction", "malformations"],
+    "gold_relations": [
+      {"src": "single umbilical artery", "rel": "associated_with", "tgt": "malformations and fetal growth restriction"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Umbilical cord", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "SUA is not an anomaly per se",
+      "SUA is associated with malformations and fetal growth restriction",
+      "Do not alarm parents when no additional severe malformation is found"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-028",
+    "question": "What is the role of color Doppler in early fetal cardiac assessment at 11+0–14+0 weeks?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "First-trimester cardiac assessment",
+    "gold_answer": "Combined B-mode and color Doppler confirms two separate ventricles with separate diastolic filling and helps exclude significant atrioventricular valve insufficiency. Identification of the left ventricular outflow tract and the three-vessel-and-trachea view in color Doppler shows the presence, number and size of the great vessels, their relationships and blood-flow direction, and ductal and aortic-arch continuity, excluding most complex great-vessel anomalies. For safety, Doppler is not indicated during routine first-trimester scanning.",
+    "gold_entities": ["color Doppler", "LVOT", "three-vessel-and-trachea view", "atrioventricular valve insufficiency", "great vessels"],
+    "gold_relations": [
+      {"src": "color Doppler", "rel": "supports_diagnosis_of", "tgt": "separate ventricular diastolic filling"},
+      {"src": "3VTV", "rel": "screening_for", "tgt": "complex great-vessel anomalies"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Thorax and heart; Doppler safety", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Color Doppler confirms two separate ventricles with separate diastolic filling",
+      "It helps exclude significant atrioventricular valve insufficiency",
+      "LVOT and 3VTV in color Doppler assess great-vessel anatomy and continuity",
+      "Doppler is not indicated during routine first-trimester scanning"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-029",
+    "question": "How should an increased nuchal translucency measurement be interpreted?",
+    "question_type": "genetic_counseling",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester increased NT",
+    "gold_answer": "Increased NT can be a marker for rarer aneuploidies and for structural and genetic anomalies, and it is associated with an increased risk of intrauterine fetal death. NT is increased in up to 40% of fetuses with a severe heart defect. It is a risk marker interpreted with a validated gestation-specific percentile and algorithm, not a diagnosis. cfDNA screens only a limited set of common aneuploidies and does not replace the NT-based assessment or its follow-up.",
+    "gold_entities": ["increased NT", "aneuploidy", "structural anomaly", "cardiac defect", "cfDNA"],
+    "gold_relations": [
+      {"src": "increased NT", "rel": "indicates", "tgt": "increased risk of aneuploidy and structural anomalies"},
+      {"src": "increased NT", "rel": "associated_with", "tgt": "cardiac defects"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Nuchal translucency; fetal anatomy and cardiac assessment", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Increased NT is a risk marker, not a diagnosis",
+      "It is associated with aneuploidy, structural and genetic anomalies and intrauterine fetal death",
+      "NT is increased in up to 40% of fetuses with a severe heart defect",
+      "cfDNA does not replace the NT-based assessment"
+    ],
+    "safety_flags": ["Do not treat increased NT as a diagnosis by itself."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-030",
+    "question": "What is the role of the nasal bone in first-trimester screening?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester aneuploidy screening",
+    "gold_answer": "A hypoplastic or absent nasal bone at 11+0–14+0 weeks is a powerful marker for trisomy 21, reported as absent or hypoplastic in 50–60% of affected fetuses and rarely in euploid fetuses, and is associated with high positive and negative likelihood ratios. It is assessed in the same median sagittal plane as the nuchal translucency.",
+    "gold_entities": ["nasal bone", "trisomy 21", "median sagittal plane", "likelihood ratio"],
+    "gold_relations": [
+      {"src": "hypoplastic/absent nasal bone", "rel": "indicator_of", "tgt": "trisomy 21"},
+      {"src": "nasal bone", "rel": "measured_at", "tgt": "median sagittal plane"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Additional ultrasound markers: nasal bone", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Absent/hypoplastic nasal bone is a marker for trisomy 21",
+      "It is present in 50–60% of affected fetuses and rarely in euploid fetuses",
+      "It is assessed in the median sagittal plane"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-031",
+    "question": "What is the role of ductus venosus (DV) flow assessment in the first trimester?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester aneuploidy screening",
+    "gold_answer": "DV flow is assessed in a right paramedian plane using color Doppler. Early studies linked a reversed DV A-wave with aneuploidy, while newer data emphasize an increased ductus venosus pulsatility index (PIV) as a continuous variable associated with an increased risk of common trisomies. Functional cardiac anomalies are also associated with abnormal DV flow.",
+    "gold_entities": ["ductus venosus", "A-wave", "pulsatility index", "aneuploidy"],
+    "gold_relations": [
+      {"src": "reversed DV A-wave / increased PIV", "rel": "indicates", "tgt": "increased risk of aneuploidy"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Ductus venosus flow", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "DV flow is assessed in a right paramedian plane",
+      "Reversed A-wave is associated with aneuploidy in early studies",
+      "Increased PIV is used as a continuous risk variable"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-032",
+    "question": "What should be documented about the fetal bladder at 11+0–14+0 weeks?",
+    "question_type": "measurement_standard",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "First-trimester basic examination",
+    "gold_answer": "By 12 weeks of gestation, the fetal bladder should be visible as a median, round, hypoechoic structure in the lower abdomen with a longitudinal diameter <7 mm. The stomach and bladder are the only hypoechoic fluid-filled structures in the abdomen and pelvis. A non-dilated visible bladder is part of the basic minimum examination.",
+    "gold_entities": ["fetal bladder", "12 weeks", "7 mm", "basic minimum examination"],
+    "gold_relations": [
+      {"src": "fetal bladder", "rel": "observed_at", "tgt": "11+0–14+0 weeks basic examination"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Abdominal content and bladder", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "The bladder should be visible by 12 weeks as a median hypoechoic structure",
+      "Normal longitudinal diameter is <7 mm",
+      "A non-dilated bladder is part of the basic minimum examination"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-033",
+    "question": "What information does the umbilical cord insertion site provide at the first-trimester scan?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 3,
+    "clinical_scenario": "First-trimester abdominal wall and cord assessment",
+    "gold_answer": "The normal insertion of the umbilical cord should be documented after 12 weeks. It provides information about ventral wall defects such as omphalocele and gastroschisis, which must be distinguished from a physiological omphalocele present up to 11 completed weeks. The number of cord vessels, cord insertion at the umbilicus and the presence of cord cysts should also be noted.",
+    "gold_entities": ["umbilical cord insertion", "omphalocele", "gastroschisis", "cord vessels"],
+    "gold_relations": [
+      {"src": "umbilical cord insertion site", "rel": "screening_for", "tgt": "ventral wall defects"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-11-14w-2023", "section": "Abdominal wall and umbilical cord", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Normal cord insertion should be documented after 12 weeks",
+      "Insertion site helps identify omphalocele and gastroschisis",
+      "Physiological omphalocele may be present up to 11 completed weeks"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L2-034",
+    "question": "What should be done when a mid-trimester scan suggests placenta previa or a low-lying placenta?",
+    "question_type": "workflow_decision",
+    "difficulty": "L2",
+    "rag_arch_type": "multi-vector",
+    "kg_hops": 2,
+    "clinical_scenario": "Suspected placenta previa",
+    "gold_answer": "Confirm the relationship between the placenta and the internal cervical os, using transvaginal scanning with color Doppler when the transabdominal scan suggests placenta previa or a low-lying placenta. If the lower placental edge is ≤15 mm from the internal os or reaches/overlaps it, arrange a third-trimester follow-up, because migration of low-lying placentae is frequent. Assess risk factors for vasa previa and, when present, consider a targeted examination.",
+    "gold_entities": ["placenta previa", "low-lying placenta", "transvaginal scan", "internal cervical os", "vasa previa"],
+    "gold_relations": [
+      {"src": "suspected placenta previa", "rel": "follow_up", "tgt": "transvaginal scan with color Doppler"},
+      {"src": "low-lying placenta", "rel": "follow_up", "tgt": "third-trimester follow-up"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-midtrimester-2022", "section": "Placenta", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Confirm placental relationship with the internal os",
+      "Use transvaginal imaging with color Doppler when placenta previa is suggested",
+      "Arrange third-trimester follow-up for low-lying placenta",
+      "Consider vasa previa risk factors"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-027",
+    "question": "A fetal echogenic lung mass shows a systemic feeding artery from the descending aorta on Doppler. Does this confirm pulmonary sequestration?",
+    "question_type": "differential_diagnosis",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Differential diagnosis of a fetal thoracic mass",
+    "gold_answer": "No. A systemic feeding artery strongly supports pulmonary sequestration, but CPAM–pulmonary-sequestration hybrid lesions occur, so the finding alone does not confirm the diagnosis. Morphology and echogenicity alone are not diagnostic either; postnatal imaging and, when available, histology may be required for confirmation.",
+    "gold_entities": ["pulmonary sequestration", "systemic feeding artery", "CPAM–pulmonary-sequestration hybrid lesion", "descending aorta"],
+    "gold_relations": [
+      {"src": "systemic feeding artery", "rel": "supports_diagnosis_of", "tgt": "pulmonary sequestration"},
+      {"src": "CPAM–pulmonary-sequestration hybrid lesion", "rel": "associated_with", "tgt": "overlapping imaging features"}
+    ],
+    "gold_sources": [
+      {"guide": "PMC-3410507", "section": "Prenatal diagnosis and differential diagnosis", "evidence_level": "L3", "page": null},
+      {"guide": "PubMed-24258515", "section": "Prenatal differential diagnosis", "evidence_level": "L3", "page": null}
+    ],
+    "must_have_statements": [
+      "A systemic feeding artery strongly supports pulmonary sequestration",
+      "A systemic feeding artery alone does not confirm the diagnosis because hybrid lesions can occur",
+      "Postnatal imaging/histology may be required"
+    ],
+    "safety_flags": ["Do not state that a systemic feeding artery excludes a CPAM–pulmonary-sequestration hybrid lesion."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-028",
+    "question": "Which sonographic findings help distinguish open spina bifida from a skin-covered spinal defect?",
+    "question_type": "differential_diagnosis",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Fetal spinal defect",
+    "gold_answer": "Open spina bifida shows disruption of the overlying skin line over a posterior-element/vertebral-arch defect, often with a dorsal meningocele or myelomeningocele, and typically indirect cranial signs: the lemon sign, the banana sign, an obliterated or reduced cisterna magna, and ventriculomegaly. A skin-covered (closed) spinal defect usually has an intact skin line and lacks these indirect cranial signs.",
+    "gold_entities": ["open spina bifida", "skin-covered spinal defect", "intact skin line", "lemon sign", "banana sign", "cisterna magna"],
+    "gold_relations": [
+      {"src": "lemon sign", "rel": "indicator_of", "tgt": "open spina bifida"},
+      {"src": "banana sign", "rel": "indicator_of", "tgt": "open spina bifida"},
+      {"src": "intact skin line", "rel": "supports_diagnosis_of", "tgt": "skin-covered spinal defect"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-cns-2020", "section": "Screening for open spina bifida", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-midtrimester-2022", "section": "Spine", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Open spina bifida disrupts the overlying skin line",
+      "Indirect cranial signs include the lemon and banana signs and obliterated cisterna magna",
+      "Skin-covered defects usually have an intact skin line and lack cranial signs"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-029",
+    "question": "At the mid-trimester scan the cerebellum appears abnormal and the cisterna magna is obliterated, but the spine looks normal. What should be done?",
+    "question_type": "workflow_decision",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Indirect signs of open spina bifida",
+    "gold_answer": "This combination should raise suspicion of open spina bifida, because the cerebellar deformity and obliterated cisterna magna are indirect cranial markers even when the spine initially appears normal. Perform detailed targeted neurosonography including meticulous axial and sagittal views of the whole spine with the intact skin line, and evaluate for ventriculomegaly; refer for expert targeted examination and counseling.",
+    "gold_entities": ["cerebellar deformity", "obliterated cisterna magna", "open spina bifida", "targeted neurosonography"],
+    "gold_relations": [
+      {"src": "obliterated cisterna magna", "rel": "indicator_of", "tgt": "open spina bifida"},
+      {"src": "cerebellar deformity", "rel": "indicator_of", "tgt": "open spina bifida"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-cns-2020", "section": "Screening examination and targeted neurosonography for open spina bifida", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Abnormal cerebellum and obliterated cisterna magna suggest open spina bifida",
+      "Perform detailed targeted neurosonography including the whole spine and skin line",
+      "Evaluate for ventriculomegaly and arrange expert referral/counseling"
+    ],
+    "safety_flags": ["Do not exclude open spina bifida on the basis of an initially normal spine appearance."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-030",
+    "question": "What is the role of the three-vessel-and-trachea view (3VTV) in detecting fetal cardiac anomalies?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Fetal cardiac screening",
+    "gold_answer": "The 3VTV helps detect outflow-tract, aortic-arch and systemic-vein anomalies, including coarctation of the aorta, right aortic arch, double aortic arch, vascular rings and aberrant right subclavian artery. Together with the three-vessel view, it improves detection of conotruncal anomalies such as transposition of the great arteries, tetralogy of Fallot, double-outlet right ventricle, common arterial trunk and pulmonary atresia with ventricular septal defect.",
+    "gold_entities": ["three-vessel-and-trachea view", "aortic arch anomalies", "coarctation of the aorta", "vascular rings", "conotruncal anomalies"],
+    "gold_relations": [
+      {"src": "3VTV", "rel": "screening_for", "tgt": "aortic arch and systemic vein anomalies"},
+      {"src": "3VTV", "rel": "screening_for", "tgt": "conotruncal anomalies"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Right ventricular outflow-tract view, three-vessel view (3VV) and three-vessel-and-trachea view (3VTV)", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "3VTV helps detect aortic arch and systemic vein anomalies",
+      "It aids detection of coarctation, vascular rings and aberrant subclavian artery",
+      "With 3VV it improves detection of conotruncal anomalies"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-031",
+    "question": "What is the clinical significance of an abnormal fetal cardiac axis?",
+    "question_type": "structural_anomaly",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Fetal cardiac axis abnormality",
+    "gold_answer": "An abnormal cardiac axis increases the risk of a cardiac malformation, especially involving the outflow tracts, and may be associated with a chromosomal anomaly. The normal apex points to the left at about 45 ± 20°. Axis displacement can also be caused by a diaphragmatic hernia or a space-occupying lesion such as a congenital pulmonary airway malformation.",
+    "gold_entities": ["cardiac axis", "cardiac malformation", "outflow tract", "diaphragmatic hernia", "CPAM"],
+    "gold_relations": [
+      {"src": "abnormal cardiac axis", "rel": "indicates", "tgt": "increased risk of cardiac malformation"},
+      {"src": "abnormal cardiac axis", "rel": "associated_with", "tgt": "chromosomal anomaly"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Situs and general appearance", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Normal cardiac apex points left at about 45 ± 20°",
+      "Abnormal axis increases risk of cardiac malformation, especially outflow tract",
+      "Abnormal axis may be associated with chromosomal anomalies and thoracic masses"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-032",
+    "question": "Which fetal heart rhythm disturbances at the mid-trimester scan require further assessment?",
+    "question_type": "workflow_decision",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Fetal cardiac rhythm assessment",
+    "gold_answer": "Persistent bradycardia (≤110 bpm) in a well fetus requires timely evaluation by a fetal cardiac specialist. Persistent tachycardia (≥180 bpm) requires further evaluation for more serious tachydysrhythmias or fetal hypoxia. Frequent episodes (more than every three to five beats) or a persistently irregular rhythm (>1–2 weeks) are indications for further assessment. Occasional ectopic beats are often benign.",
+    "gold_entities": ["bradycardia", "tachycardia", "ectopic beats", "fetal cardiac specialist"],
+    "gold_relations": [
+      {"src": "persistent bradycardia ≤110 bpm", "rel": "follow_up", "tgt": "fetal cardiac specialist evaluation"},
+      {"src": "persistent tachycardia ≥180 bpm", "rel": "follow_up", "tgt": "further evaluation"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-fetal-cardiac-screening-2023", "section": "Situs and general appearance; cardiac rhythm", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Persistent bradycardia ≤110 bpm requires specialist evaluation",
+      "Persistent tachycardia ≥180 bpm requires further evaluation",
+      "Frequent or persistently irregular rhythm is an indication for further assessment"
+    ],
+    "safety_flags": [],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L3-033",
+    "question": "How should isolated mild fetal ventriculomegaly (atrial width 10–12 mm) be managed and counseled?",
+    "question_type": "genetic_counseling",
+    "difficulty": "L3",
+    "rag_arch_type": "graph-enhanced",
+    "kg_hops": 4,
+    "clinical_scenario": "Isolated mild fetal ventriculomegaly",
+    "gold_answer": "Confirm the atrium is measured perpendicular to the ventricular cavity at the glomus of the choroid plexus; 10–12 mm is mild ventriculomegaly. Offer a thorough fetal examination to exclude other anomalies, targeted brain and spine assessment, amniocentesis for chromosomal analysis, and screening for congenital infection (e.g., CMV, toxoplasmosis). Fetal brain MRI may be offered later. If findings remain isolated and stable, the prognosis is generally good and the risk of neurological impairment is not higher than about 10%; continue serial ultrasound surveillance.",
+    "gold_entities": ["mild ventriculomegaly", "amniocentesis", "congenital infection", "CMV", "fetal MRI"],
+    "gold_relations": [
+      {"src": "mild ventriculomegaly", "rel": "follow_up", "tgt": "detailed anomaly and infection workup"},
+      {"src": "isolated mild ventriculomegaly", "rel": "associated_with", "tgt": "generally good prognosis"}
+    ],
+    "gold_sources": [
+      {"guide": "ISUOG-cns-2020", "section": "Ventriculomegaly and targeted neurosonography", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Measure the atrium at the glomus of the choroid plexus; 10–12 mm is mild",
+      "Offer detailed examination, amniocentesis and infection screening",
+      "Isolated and stable mild ventriculomegaly has a generally good prognosis"
+    ],
+    "safety_flags": ["Do not equate ventriculomegaly with hydrocephalus without etiologic assessment."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L4-002",
+    "question": "A pregnant woman is considering purchasing an over-the-counter fetal heartbeat Doppler (doptone) for home use. How should she be counseled?",
+    "question_type": "safety",
+    "difficulty": "L4",
+    "rag_arch_type": "basic",
+    "kg_hops": 2,
+    "clinical_scenario": "Safety of non-medical Doppler use",
+    "gold_answer": "The FDA advises that over-the-counter fetal heartbeat monitoring systems (doptones) should only be used by trained health care providers when medically necessary; use by untrained persons could expose the fetus to prolonged and unsafe energy. Recommend routine antenatal care and medically indicated ultrasound rather than home Doppler for reassurance, and counsel that a home device cannot replace professional assessment.",
+    "gold_entities": ["doptone", "non-medical Doppler", "prolonged energy exposure", "medically indicated ultrasound"],
+    "gold_relations": [
+      {"src": "home doptone use", "rel": "associated_with", "tgt": "prolonged fetal ultrasound energy exposure"}
+    ],
+    "gold_sources": [
+      {"guide": "FDA-ultrasound-imaging", "section": "Fetal Doppler and over-the-counter fetal heartbeat monitors", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Home fetal Doppler devices should be used only by trained providers when medically necessary",
+      "Untrained use may expose the fetus to prolonged and unsafe energy",
+      "Recommend medically indicated professional care"
+    ],
+    "safety_flags": ["Do not encourage home use of fetal Doppler for reassurance.", "Do not claim home Doppler is risk-free."],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  },
+  {
+    "question_id": "PU-L4-003",
+    "question": "A patient says '3D/4D ultrasound is harmless because it uses no radiation'. How should this be corrected?",
+    "question_type": "safety",
+    "difficulty": "L4",
+    "rag_arch_type": "basic",
+    "kg_hops": 2,
+    "clinical_scenario": "Safety misconceptions about 3D/4D ultrasound",
+    "gold_answer": "Although ultrasound does not use ionizing radiation, it still deposits energy and can cause tissue heating and mechanical bioeffects. Risks may increase with unnecessary prolonged exposure or untrained use. 3D/4D describes the imaging format, not a guarantee of safety. Ultrasound should follow the ALARA principle and be performed for medical indications by qualified personnel, not solely for keepsake or entertainment purposes.",
+    "gold_entities": ["3D/4D ultrasound", "ALARA", "tissue heating", "mechanical bioeffects", "non-medical ultrasound"],
+    "gold_relations": [
+      {"src": "3D/4D ultrasound", "rel": "associated_with", "tgt": "tissue heating and mechanical bioeffects"},
+      {"src": "ALARA", "rel": "recommended_for", "tgt": "diagnostic ultrasound examination"}
+    ],
+    "gold_sources": [
+      {"guide": "FDA-ultrasound-imaging", "section": "Ultrasound imaging safety and keepsake use", "evidence_level": "L1", "page": null},
+      {"guide": "ISUOG-midtrimester-2022", "section": "Is prenatal ultrasonography safe?", "evidence_level": "L1", "page": null}
+    ],
+    "must_have_statements": [
+      "Ultrasound deposits energy and can cause heating and bioeffects",
+      "3D/4D is an imaging format, not a safety guarantee",
+      "Follow ALARA; do not use ultrasound solely for entertainment",
+      "Risks may increase with prolonged exposure or untrained use"
+    ],
+    "safety_flags": [
+      "Do not claim that absence of ionizing radiation means there is no exposure risk.",
+      "Do not recommend non-medical or keepsake ultrasound."
+    ],
+    "annotators": [
+      {"id": "REVIEW-A", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."},
+      {"id": "REVIEW-B", "rating": "pending", "must_have_coverage": 0, "notes": "Draft; requires expert annotation."}
+    ],
+    "agreement_kappa": null,
+    "adjudicated": false,
+    "split": null
+  }
+]
