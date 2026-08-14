@@ -1,7 +1,13 @@
 [project]
 name = "16-prenatal-graphrag"
 version = "0.1.0"
-description = "Add your description here"
+description = "Prenatal ultrasound GraphRAG corpus and benchmark"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "graphrag>=3.1.1",
+    "jupyterlab>=4.6.3",
+    "pypdf>=6.16.0",
+    "pyyaml>=6.0.3",
+    "scienceplots",
+]
