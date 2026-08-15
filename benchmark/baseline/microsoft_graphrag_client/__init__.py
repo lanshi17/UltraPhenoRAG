@@ -25,6 +25,12 @@ from benchmark.baseline.microsoft_graphrag_client.client import GraphRAGClient
 from benchmark.baseline.microsoft_graphrag_client.config.config_manager import (
     ConfigManager,
 )
+from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
+    DEFAULT_COMPLETION_MODEL,
+    DEFAULT_EMBEDDING_MODEL,
+    LLMConfigOverrides,
+    ModelConfigOverride,
+)
 from benchmark.baseline.microsoft_graphrag_client.data.data_loader import DataLoader
 from benchmark.baseline.microsoft_graphrag_client.engine.basic_search_engine import (
     BasicSearchEngine,
@@ -60,8 +66,13 @@ __all__ = [
     "SearchMethod",
     "IndexMethod",
     "DocSelectionMethod",
-    # 组件
+    # 配置
     "ConfigManager",
+    "DEFAULT_COMPLETION_MODEL",
+    "DEFAULT_EMBEDDING_MODEL",
+    "LLMConfigOverrides",
+    "ModelConfigOverride",
+    # 组件
     "DataLoader",
     "IndexEngine",
     "GlobalSearchEngine",

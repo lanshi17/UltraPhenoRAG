@@ -36,6 +36,9 @@ from graphrag.config.models.graph_rag_config import GraphRagConfig
 from benchmark.baseline.microsoft_graphrag_client.config.config_manager import (
     ConfigManager,
 )
+from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
+    LLMConfigOverrides,
+)
 from benchmark.baseline.microsoft_graphrag_client.engine.basic_search_engine import (
     BasicSearchEngine,
 )
@@ -91,6 +94,8 @@ class GraphRAGClient:
         GraphRAG 项目根目录（包含 ``settings.yaml``）。
     data_dir : str | Path | None, optional
         索引输出目录。为 ``None`` 时使用 ``settings.yaml`` 中的 ``output.base_dir``。
+    llm_overrides : LLMConfigOverrides | Mapping[str, Any] | None, optional
+        completion/embedding 模型的运行时覆盖。
     verbose : bool, default False
         是否输出详细日志。
     """
@@ -99,12 +104,17 @@ class GraphRAGClient:
         self,
         root_dir: str | Path,
         data_dir: str | Path | None = None,
+        llm_overrides: LLMConfigOverrides | dict[str, object] | None = None,
         verbose: bool = False,
     ) -> None:
         self.verbose = verbose
 
         # 配置管理
-        self._config_manager = ConfigManager(root_dir=root_dir, data_dir=data_dir)
+        self._config_manager = ConfigManager(
+            root_dir=root_dir,
+            data_dir=data_dir,
+            llm_overrides=llm_overrides,
+        )
 
         # 懒加载引擎
         self._index_engine: IndexEngine | None = None

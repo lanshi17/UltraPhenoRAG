@@ -92,6 +92,16 @@ class ModelConfigOverride:
         return result
 
 
+def load_project_env(root_dir: str | os.PathLike[str]) -> None:
+    """在解析运行时覆盖前加载项目目录中的 ``.env``。"""
+    from dotenv import load_dotenv
+
+    env_path = os.fspath(root_dir)
+    env_file = os.path.join(env_path, ".env")
+    if os.path.isfile(env_file):
+        load_dotenv(env_file, override=False)
+
+
 @dataclass(frozen=True)
 class LLMConfigOverrides:
     """completion 和 embedding 的统一配置覆盖。"""
@@ -174,6 +184,7 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL",
     "LLMConfigOverrides",
     "ModelConfigOverride",
+    "load_project_env",
     "merge_overrides",
     "redact_overrides",
 ]

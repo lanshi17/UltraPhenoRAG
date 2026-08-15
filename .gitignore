@@ -10,4 +10,10 @@ wheels/
 .venv
 benchmark/baseline/libs
 *.log
+
+# 保留项目级示例配置，真实数据和密钥仍保持忽略
 benchmark/data
+!benchmark/data/
+!benchmark/data/microsoft_graphrag/
+!benchmark/data/microsoft_graphrag/.env.example
+benchmark/data/raw
