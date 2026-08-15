@@ -16,4 +16,5 @@ benchmark/data
 !benchmark/data/
 !benchmark/data/microsoft_graphrag/
 !benchmark/data/microsoft_graphrag/.env.example
+**/.env
 benchmark/data/raw
