@@ -46,6 +46,7 @@ from benchmark.qa.build_dataset import (
     stratified_split,
     validate_dataset,
 )
+from benchmark.qa.judge import JudgeConfig, judge_answer
 from benchmark.qa.models import (
     AnnotationRecord,
     DatasetSplit,
@@ -65,14 +66,17 @@ from benchmark.qa.schema import (
 from benchmark.qa.scoring import (
     DatasetScoringReport,
     GenerationMetrics,
+    JudgeMetrics,
     RetrievalMetrics,
     SafetyMetrics,
+    SourceMatchMetrics,
     ScoringResult,
     compute_answer_correctness,
     compute_completeness,
     compute_faithfulness,
     compute_retrieval_metrics,
     compute_safety_score,
+    compute_source_match,
     score_question,
 )
 
@@ -96,13 +100,18 @@ __all__ = [
     "DatasetScoringReport",
     "RetrievalMetrics",
     "GenerationMetrics",
+    "JudgeMetrics",
     "SafetyMetrics",
+    "SourceMatchMetrics",
     "score_question",
     "compute_retrieval_metrics",
     "compute_faithfulness",
     "compute_completeness",
     "compute_answer_correctness",
     "compute_safety_score",
+    "compute_source_match",
+    "JudgeConfig",
+    "judge_answer",
     # Annotation Agreement
     "cohens_kappa",
     "fleiss_kappa",

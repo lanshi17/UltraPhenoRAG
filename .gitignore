@@ -18,3 +18,5 @@ benchmark/data
 !benchmark/data/microsoft_graphrag/.env.example
 **/.env
 benchmark/data/raw
+benchmark/data/microsoft_graphrag/cache
+benchmark/data/microsoft_graphrag/output

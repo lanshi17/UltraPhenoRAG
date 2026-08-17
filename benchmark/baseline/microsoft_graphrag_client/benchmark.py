@@ -20,26 +20,33 @@ import pandas as pd
 import yaml
 from pypdf import PdfReader
 
+from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
+    DEFAULT_COMPLETION_MODEL,
+    DEFAULT_EMBEDDING_MODEL,
+    LLMConfigOverrides,
+    ModelConfigOverride,
+)
 from benchmark.qa import (
     DatasetScoringReport,
+    JudgeConfig,
     EntityType,
     Question,
     compute_dataset_fingerprint,
     load_questions,
     score_question,
+    judge_answer,
     validate_dataset,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RAW_DIR = REPOSITORY_ROOT / "benchmark" / "data" / "raw"
-DEFAULT_PROJECT_DIR = (
-    REPOSITORY_ROOT / "benchmark" / "data" / "microsoft_graphrag"
-)
+DEFAULT_PROJECT_DIR = REPOSITORY_ROOT / "benchmark" / "data" / "microsoft_graphrag"
 DEFAULT_DATASET = (
     REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "sample_questions.json"
 )
-DEFAULT_RESULTS_DIR = (
-    REPOSITORY_ROOT / "benchmark" / "results" / "microsoft_graphrag"
+DEFAULT_RESULTS_DIR = REPOSITORY_ROOT / "benchmark" / "results" / "microsoft_graphrag"
+DEFAULT_SCORING_CONFIG = (
+    REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "scoring_config.yaml"
 )
 MANIFEST_NAME = "corpus_manifest.json"
 
@@ -47,9 +54,7 @@ CANONICAL_SOURCE_FILES: dict[str, str] = {
     "ISUOG_2020_fetal-CNS-part1.pdf": "ISUOG-cns-2020",
     "ISUOG_2022_routine-mid-trimester-scan.pdf": "ISUOG-midtrimester-2022",
     "ISUOG_2023_11-14-week-ultrasound-scan.pdf": "ISUOG-11-14w-2023",
-    "ISUOG_2023_fetal-cardiac-screening.pdf": (
-        "ISUOG-fetal-cardiac-screening-2023"
-    ),
+    "ISUOG_2023_fetal-cardiac-screening.pdf": ("ISUOG-fetal-cardiac-screening-2023"),
     "ISUOG-Practice-Guidelines-CNS-part-1-targeted-neurosonography.pdf": (
         "ISUOG-cns-2020"
     ),
@@ -73,6 +78,104 @@ PLACEHOLDER_API_KEYS = {
     "YOUR_API_KEY",
     "your-api-key",
 }
+
+
+def _load_scoring_options(path: Path | None) -> dict[str, Any]:
+    """读取来源校验策略，不影响旧结果文件的解析。"""
+    config_path = (path or DEFAULT_SCORING_CONFIG).resolve()
+    if not config_path.is_file():
+        return {"source_match_mode": "hybrid", "source_equivalence": {}}
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    retrieval = data.get("retrieval", {}) if isinstance(data, dict) else {}
+    mode = str(retrieval.get("source_match_mode", "hybrid"))
+    equivalence = retrieval.get("source_equivalence", {})
+    if not isinstance(equivalence, dict):
+        equivalence = {}
+    return {
+        "source_match_mode": mode,
+        "source_equivalence": {
+            str(key): [str(item) for item in values]
+            for key, values in equivalence.items()
+            if isinstance(values, (list, tuple, set))
+        },
+    }
+
+
+def _empty_usage() -> dict[str, Any]:
+    return {
+        "request_count": 0,
+        "failed_request_count": 0,
+        "prompt_tokens": None,
+        "completion_tokens": None,
+        "total_tokens": None,
+        "input_cost_usd": None,
+        "output_cost_usd": None,
+        "total_cost_usd": None,
+        "cost_available": False,
+        "models": [],
+        "by_model": {},
+    }
+
+
+def _merge_usage(*usages: dict[str, Any]) -> dict[str, Any]:
+    """合并 query/Judge usage；未知 token/cost 保持 None，不伪造为 0。"""
+    numeric_fields = (
+        "request_count",
+        "failed_request_count",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "input_cost_usd",
+        "output_cost_usd",
+        "total_cost_usd",
+    )
+    result = _empty_usage()
+    for field in numeric_fields:
+        values = [item.get(field) for item in usages if item.get(field) is not None]
+        if values:
+            result[field] = sum(float(value) for value in values)
+            if field.endswith("tokens"):
+                result[field] = int(result[field])
+    result["cost_available"] = bool(usages) and all(
+        item.get("cost_available") is True
+        for item in usages
+        if item.get("request_count", 0) or item.get("total_tokens") is not None
+    )
+    result["models"] = sorted(
+        {str(model) for item in usages for model in item.get("models", [])}
+    )
+    return result
+
+
+def _aggregate_usage(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """汇总查询/Judge usage，保留缺失成本的可见性。"""
+    result: dict[str, Any] = {
+        "recorded_query_count": 0,
+        "recorded_judge_count": 0,
+        "cost_missing_count": 0,
+        "query": _empty_usage(),
+        "judge": _empty_usage(),
+        "total": _empty_usage(),
+    }
+    for scope in ("query", "judge", "total"):
+        values = [
+            row.get("usage", {}).get(scope)
+            for row in rows
+            if isinstance(row.get("usage", {}).get(scope), dict)
+        ]
+        result[scope] = _merge_usage(*values) if values else _empty_usage()
+    result["recorded_query_count"] = sum(
+        isinstance(row.get("usage", {}).get("query"), dict) for row in rows
+    )
+    result["recorded_judge_count"] = sum(
+        isinstance(row.get("usage", {}).get("judge"), dict) for row in rows
+    )
+    result["cost_missing_count"] = sum(
+        isinstance(row.get("usage", {}).get("total"), dict)
+        and not row["usage"]["total"].get("cost_available", False)
+        for row in rows
+    )
+    return result
 
 
 class BenchmarkPreflightError(RuntimeError):
@@ -113,9 +216,7 @@ def _extract_pdf_text(pdf_path: Path) -> tuple[str, int, list[str]]:
         try:
             text = page.extract_text() or ""
         except Exception as exc:  # noqa: BLE001
-            warnings.append(
-                f"page {page_number}: {type(exc).__name__}: {exc}"
-            )
+            warnings.append(f"page {page_number}: {type(exc).__name__}: {exc}")
             continue
 
         text = text.replace("\x00", "")
@@ -127,12 +228,53 @@ def _extract_pdf_text(pdf_path: Path) -> tuple[str, int, list[str]]:
     return "\n\n".join(page_sections), len(reader.pages), warnings
 
 
+def _apply_llm_env_references(
+    settings: dict[str, Any],
+    *,
+    model_env: str | None,
+    api_key_env: str | None,
+    api_base_env: str | None,
+    embedding_model_env: str | None,
+    embedding_api_key_env: str | None,
+    embedding_api_base_env: str | None,
+) -> None:
+    """将自定义环境变量名写入 settings.yaml 的 LLM 模型配置（``${VAR}`` 引用）。
+
+    仅当对应参数非空时写入，未指定则保留现有引用。embedding 缺省沿用
+    completion 的变量名。
+    """
+    completion = settings.setdefault("completion_models", {}).setdefault(
+        "default_completion_model", {}
+    )
+    embedding = settings.setdefault("embedding_models", {}).setdefault(
+        "default_embedding_model", {}
+    )
+    if model_env:
+        completion["model"] = "${" + model_env + "}"
+    if api_key_env:
+        completion["api_key"] = "${" + api_key_env + "}"
+    if api_base_env:
+        completion["api_base"] = "${" + api_base_env + "}"
+    if embedding_model_env:
+        embedding["model"] = "${" + embedding_model_env + "}"
+    if embedding_api_key_env:
+        embedding["api_key"] = "${" + embedding_api_key_env + "}"
+    if embedding_api_base_env:
+        embedding["api_base"] = "${" + embedding_api_base_env + "}"
+
+
 def _configure_project(
     project_dir: Path,
     *,
     model: str,
     embedding_model: str,
     top_k: int,
+    model_env: str | None = None,
+    api_key_env: str | None = None,
+    api_base_env: str | None = None,
+    embedding_model_env: str | None = None,
+    embedding_api_key_env: str | None = None,
+    embedding_api_base_env: str | None = None,
 ) -> bool:
     settings_path = project_dir / "settings.yaml"
     created = not settings_path.exists()
@@ -156,6 +298,15 @@ def _configure_project(
     settings.setdefault("basic_search", {})["k"] = top_k
     settings.setdefault("local_search", {})["top_k_entities"] = top_k
     settings["local_search"]["top_k_relationships"] = top_k
+    _apply_llm_env_references(
+        settings,
+        model_env=model_env,
+        api_key_env=api_key_env,
+        api_base_env=api_base_env,
+        embedding_model_env=(embedding_model_env or model_env),
+        embedding_api_key_env=(embedding_api_key_env or api_key_env),
+        embedding_api_base_env=(embedding_api_base_env or api_base_env),
+    )
 
     settings_path.write_text(
         yaml.safe_dump(
@@ -203,6 +354,12 @@ def prepare_corpus(
     model: str,
     embedding_model: str,
     top_k: int,
+    model_env: str | None = None,
+    api_key_env: str | None = None,
+    api_base_env: str | None = None,
+    embedding_model_env: str | None = None,
+    embedding_api_key_env: str | None = None,
+    embedding_api_base_env: str | None = None,
 ) -> dict[str, Any]:
     """提取 PDF 文本、初始化 GraphRAG 项目并生成来源清单。"""
     raw_dir = raw_dir.resolve()
@@ -229,6 +386,12 @@ def prepare_corpus(
         model=model,
         embedding_model=embedding_model,
         top_k=top_k,
+        model_env=model_env,
+        api_key_env=api_key_env,
+        api_base_env=api_base_env,
+        embedding_model_env=embedding_model_env,
+        embedding_api_key_env=embedding_api_key_env,
+        embedding_api_base_env=embedding_api_base_env,
     )
     input_dir = project_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
@@ -306,9 +469,7 @@ def prepare_corpus(
 
     questions = load_questions(dataset_path)
     successful_source_ids = {
-        item["source_id"]
-        for item in documents
-        if item["status"] in {"ok", "partial"}
+        item["source_id"] for item in documents if item["status"] in {"ok", "partial"}
     }
     manifest = {
         "created_at": _now_iso(),
@@ -319,9 +480,7 @@ def prepare_corpus(
         "indexed_document_count": sum(
             item["status"] in {"ok", "partial"} for item in documents
         ),
-        "duplicate_count": sum(
-            item["status"] == "duplicate" for item in documents
-        ),
+        "duplicate_count": sum(item["status"] == "duplicate" for item in documents),
         "error_count": sum(item["status"] == "error" for item in documents),
         "partial_count": sum(item["status"] == "partial" for item in documents),
         "documents": documents,
@@ -350,9 +509,7 @@ def _model_credential_issues(config: Any) -> list[str]:
                 continue
             api_key = str(model_config.api_key or "").strip()
             if api_key in PLACEHOLDER_API_KEYS:
-                issues.append(
-                    f"{group_name} model {model_id!r} 未配置有效 API key"
-                )
+                issues.append(f"{group_name} model {model_id!r} 未配置有效 API key")
     return issues
 
 
@@ -387,9 +544,7 @@ def preflight(
         coverage = manifest.get("dataset_source_coverage", {})
         missing = coverage.get("missing_source_ids", [])
         if missing:
-            warnings.append(
-                "原始语料缺少金标准来源: " + ", ".join(missing)
-            )
+            warnings.append("原始语料缺少金标准来源: " + ", ".join(missing))
         if manifest.get("error_count", 0):
             issues.append(
                 f"{manifest['error_count']} 份 PDF 文本提取失败，详见 {manifest_path}"
@@ -439,9 +594,7 @@ def preflight(
             table for table in required_tables if not (output_dir / table).is_file()
         ]
         if require_index and missing_tables:
-            issues.append(
-                "索引产物不完整，缺少: " + ", ".join(missing_tables)
-            )
+            issues.append("索引产物不完整，缺少: " + ", ".join(missing_tables))
 
     return {
         "checked_at": _now_iso(),
@@ -474,9 +627,15 @@ def build_index(
     cache: bool,
     skip_validation: bool,
     verbose: bool,
+    llm_overrides: LLMConfigOverrides | None = None,
 ) -> dict[str, Any]:
     """通过仓库内的 GraphRAGClient 构建知识图谱索引。"""
     from benchmark.baseline.microsoft_graphrag_client import GraphRAGClient
+
+    # 必须先解析为绝对路径：preflight 中的 load_config 会 os.chdir 到配置目录，
+    # 若保持相对路径，后续 GraphRAGClient 会基于新 cwd 二次拼接导致路径错误。
+    project_dir = project_dir.resolve()
+    dataset_path = dataset_path.resolve()
 
     report = preflight(
         project_dir=project_dir,
@@ -486,7 +645,11 @@ def build_index(
     _require_preflight(report)
 
     started = time.monotonic()
-    client = GraphRAGClient(project_dir, verbose=verbose)
+    client = GraphRAGClient(
+        project_dir,
+        llm_overrides=llm_overrides,
+        verbose=verbose,
+    )
     result = client.index(
         method=method,
         cache=cache,
@@ -551,9 +714,7 @@ class SourceResolver:
         for _, row in documents.iterrows():
             document_id = str(row.get("id", ""))
             title = str(row.get("title", ""))
-            source_id = title_sources.get(title) or title_sources.get(
-                Path(title).name
-            )
+            source_id = title_sources.get(title) or title_sources.get(Path(title).name)
             if source_id is None:
                 source_id = _source_id_from_text(str(row.get("text", "")))
             if document_id and source_id:
@@ -662,9 +823,7 @@ def _supported_statements(
     supported: set[str] = set()
     for statement in statements:
         keywords = [
-            word
-            for word in re.split(r"[，,。；;、\s]+", statement)
-            if len(word) > 2
+            word for word in re.split(r"[，,。；;、\s]+", statement) if len(word) > 2
         ]
         if not keywords:
             supported.add(statement)
@@ -715,9 +874,7 @@ def _selected_method(question: Question, requested_method: str) -> str:
     try:
         return ADAPTIVE_SEARCH_METHODS[question.rag_arch_type]
     except KeyError as exc:
-        raise ValueError(
-            f"不支持的 rag_arch_type: {question.rag_arch_type}"
-        ) from exc
+        raise ValueError(f"不支持的 rag_arch_type: {question.rag_arch_type}") from exc
 
 
 def _query(client: Any, question: Question, requested_method: str) -> Any:
@@ -754,6 +911,13 @@ def evaluate(
     question_ids: Sequence[str],
     fail_fast: bool,
     verbose: bool,
+    llm_overrides: LLMConfigOverrides | None = None,
+    source_match_mode: str | None = None,
+    scoring_config_path: Path | None = None,
+    judge_mode: str = "off",
+    judge_model: str | None = None,
+    judge_api_key_env: str = "OPENAI_API_KEY",
+    judge_api_base: str | None = None,
 ) -> dict[str, Any]:
     """查询数据集、计算三层指标并保存可审计结果。"""
     from benchmark.baseline.microsoft_graphrag_client import GraphRAGClient
@@ -768,16 +932,29 @@ def evaluate(
     _require_preflight(preflight_report)
 
     questions = load_questions(dataset_path)
+    scoring_options = _load_scoring_options(scoring_config_path)
+    selected_source_mode = source_match_mode or scoring_options["source_match_mode"]
+    if selected_source_mode not in {"exact", "evidence", "hybrid"}:
+        raise BenchmarkPreflightError(
+            "source-match-mode 必须为 exact、evidence 或 hybrid"
+        )
+    if judge_mode not in {"off", "optional", "required"}:
+        raise BenchmarkPreflightError("judge-mode 必须为 off、optional 或 required")
+    judge_config = (
+        JudgeConfig(
+            model=judge_model,
+            api_key_env=judge_api_key_env,
+            api_base=judge_api_base,
+        )
+        if judge_mode != "off" and judge_model
+        else None
+    )
     if question_ids:
         selected_ids = set(question_ids)
         questions = [
-            question
-            for question in questions
-            if question.question_id in selected_ids
+            question for question in questions if question.question_id in selected_ids
         ]
-        missing_ids = selected_ids - {
-            question.question_id for question in questions
-        }
+        missing_ids = selected_ids - {question.question_id for question in questions}
         if missing_ids:
             raise BenchmarkPreflightError(
                 "数据集中不存在题目: " + ", ".join(sorted(missing_ids))
@@ -794,7 +971,11 @@ def evaluate(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path = output_path.with_suffix(".jsonl")
 
-    client = GraphRAGClient(project_dir, verbose=verbose)
+    client = GraphRAGClient(
+        project_dir,
+        llm_overrides=llm_overrides,
+        verbose=verbose,
+    )
     resolver = _load_source_resolver(client, project_dir)
     scoring_report = DatasetScoringReport()
     raw_results: list[dict[str, Any]] = []
@@ -811,6 +992,7 @@ def evaluate(
                 flush=True,
             )
             error: str | None = None
+            query_telemetry: dict[str, Any] = {}
             try:
                 method, query_result = _query(
                     client,
@@ -824,6 +1006,7 @@ def evaluate(
                     resolver,
                     k,
                 )
+                query_telemetry = dict(query_result.telemetry or {})
             except Exception as exc:  # noqa: BLE001
                 error = f"{type(exc).__name__}: {exc}"
                 answer = ""
@@ -842,6 +1025,26 @@ def evaluate(
                 for item in contexts
             ]
             refused, referred = _safety_actions(answer)
+            judge_result: dict[str, Any] | None = None
+            if judge_mode != "off" and error is None:
+                if judge_config is None:
+                    judge_result = {
+                        "model": judge_model or "",
+                        "error": "未提供 --judge-model，已回退 lexical",
+                        "usage": {
+                            **_empty_usage(),
+                            "failed_request_count": 1,
+                        },
+                    }
+                else:
+                    judge_result = judge_answer(
+                        question=question.question,
+                        answer=answer,
+                        context=retrieved_context,
+                        gold_answer=question.gold_answer,
+                        must_have_statements=question.must_have_statements,
+                        config=judge_config,
+                    )
             scoring_result = score_question(
                 question=question,
                 answer=answer,
@@ -851,9 +1054,14 @@ def evaluate(
                 refused=refused,
                 referred=referred,
                 k=k,
+                source_match_mode=selected_source_mode,
+                source_equivalence=scoring_options["source_equivalence"],
+                judge_result=judge_result,
             )
             scoring_report.add(scoring_result)
 
+            query_usage = dict(query_telemetry.get("usage") or _empty_usage())
+            judge_usage = dict((judge_result or {}).get("usage") or _empty_usage())
             item = {
                 "question_id": question.question_id,
                 "question": question.question,
@@ -866,6 +1074,12 @@ def evaluate(
                 "refused": refused,
                 "referred": referred,
                 "error": error,
+                "telemetry": query_telemetry,
+                "usage": {
+                    "query": query_usage,
+                    "judge": judge_usage,
+                    "total": _merge_usage(query_usage, judge_usage),
+                },
                 "elapsed_seconds": round(
                     time.monotonic() - question_started,
                     3,
@@ -873,11 +1087,11 @@ def evaluate(
                 "scoring": asdict(scoring_result),
             }
             raw_results.append(item)
-            raw_stream.write(
-                json.dumps(item, ensure_ascii=False) + "\n"
-            )
+            raw_stream.write(json.dumps(item, ensure_ascii=False) + "\n")
             raw_stream.flush()
 
+    summary = scoring_report.summary()
+    summary["usage"] = _aggregate_usage(raw_results)
     report = {
         "metadata": {
             "created_at": _now_iso(),
@@ -895,12 +1109,32 @@ def evaluate(
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "raw_results_path": str(raw_path),
             "scoring_note": (
-                "当前生成指标使用 benchmark.qa.scoring 的词法近似算法，"
-                "不是 LLM-as-Judge；L3/L4 与 pending 标注仍需专家复核。"
+                "每题同时保留 lexical 指标；Judge 开启且成功时 selected=judge，"
+                "失败时回退 lexical。来源校验同时保留 exact 与 evidence/equivalent 口径。"
             ),
+            "scoring_method": (
+                "lexical"
+                if judge_mode == "off"
+                else (
+                    "judge"
+                    if raw_results and all(
+                        item["scoring"].get("scoring_method") == "judge"
+                        for item in raw_results
+                    )
+                    else (
+                        "mixed"
+                        if any(item["scoring"].get("scoring_method") == "judge" for item in raw_results)
+                        else "lexical"
+                    )
+                )
+            ),
+            "judge_mode": judge_mode,
+            "judge_model": judge_model,
+            "source_match_mode": selected_source_mode,
+            "scoring_config_path": str((scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()),
         },
         "preflight": preflight_report,
-        "summary": scoring_report.summary(),
+        "summary": summary,
         "results": raw_results,
     }
     output_path.write_text(
@@ -933,6 +1167,142 @@ def _add_dataset_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_llm_override_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    include_model_names: bool = True,
+) -> None:
+    """添加运行时 LLM 模型/供应商覆盖参数。
+
+    所有参数默认 ``None``：不提供时沿用 ``settings.yaml``，提供时仅运行时
+    覆盖，不写回配置文件。
+    """
+    group = parser.add_argument_group(
+        "LLM 模型/供应商覆盖（运行时生效，不改写 settings.yaml）"
+    )
+    if include_model_names:
+        group.add_argument(
+            "--model",
+            default=None,
+            help="completion 模型名（如 gpt-4.1）",
+        )
+        group.add_argument(
+            "--embedding-model",
+            default=None,
+            help="embedding 模型名（如 text-embedding-3-large）",
+        )
+        group.add_argument(
+            "--model-env",
+            default=None,
+            help="completion 模型名环境变量（运行时解析，如 GRAPHRAG_COMPLETION_MODEL）",
+        )
+        group.add_argument(
+            "--embedding-model-env",
+            default=None,
+            help="embedding 模型名环境变量（运行时解析）",
+        )
+    group.add_argument(
+        "--model-provider",
+        default=None,
+        help="completion 供应商（如 openai/azure）",
+    )
+    group.add_argument(
+        "--embedding-model-provider",
+        default=None,
+        help="embedding 供应商（如 openai/azure）",
+    )
+    group.add_argument(
+        "--api-base",
+        default=None,
+        help="completion 与 embedding 共享 API base URL（含 /v1）",
+    )
+    group.add_argument(
+        "--embedding-api-base",
+        default=None,
+        help="embedding 专属 API base URL（覆盖 --api-base）",
+    )
+    group.add_argument(
+        "--api-base-env",
+        default=None,
+        help="completion 与 embedding 共享 API base 环境变量名（运行时解析）",
+    )
+    group.add_argument(
+        "--embedding-api-base-env",
+        default=None,
+        help="embedding 专属 API base 环境变量名（覆盖 --api-base-env）",
+    )
+    group.add_argument(
+        "--api-version",
+        default=None,
+        help="API version（Azure 等供应商需要时）",
+    )
+    group.add_argument(
+        "--api-key-env",
+        default=None,
+        help="API key 环境变量名（如 GRAPHRAG_API_KEY）",
+    )
+    group.add_argument(
+        "--embedding-api-key-env",
+        default=None,
+        help="embedding 专属 API key 环境变量名（覆盖 --api-key-env）",
+    )
+
+
+def _llm_overrides_from_args(
+    args: argparse.Namespace,
+) -> LLMConfigOverrides | None:
+    """从 CLI 参数构建 LLM 模型/供应商运行时覆盖。"""
+    completion_kwargs: dict[str, str] = {}
+    for attr, key in (
+        ("model", "model"),
+        ("model_env", "model_env"),
+        ("model_provider", "model_provider"),
+        ("api_base", "api_base"),
+        ("api_base_env", "api_base_env"),
+        ("api_version", "api_version"),
+        ("api_key_env", "api_key_env"),
+    ):
+        value = getattr(args, attr, None)
+        if value:
+            completion_kwargs[key] = value
+
+    embedding_kwargs: dict[str, str] = {}
+    for attr, key in (
+        ("embedding_model", "model"),
+        ("embedding_model_env", "model_env"),
+        ("embedding_model_provider", "model_provider"),
+    ):
+        value = getattr(args, attr, None)
+        if value:
+            embedding_kwargs[key] = value
+    # 共享项也作用于 embedding；embedding 专属项优先。
+    for attr, key in (
+        ("model_env", "model_env"),
+        ("api_base", "api_base"),
+        ("api_base_env", "api_base_env"),
+        ("api_version", "api_version"),
+        ("api_key_env", "api_key_env"),
+    ):
+        value = getattr(args, attr, None)
+        if value:
+            embedding_kwargs.setdefault(key, value)
+    for attr, key in (
+        ("embedding_model_env", "model_env"),
+        ("embedding_api_base", "api_base"),
+        ("embedding_api_base_env", "api_base_env"),
+        ("embedding_api_key_env", "api_key_env"),
+    ):
+        value = getattr(args, attr, None)
+        if value:
+            embedding_kwargs[key] = value
+
+    overrides = LLMConfigOverrides(
+        completion=ModelConfigOverride(**completion_kwargs),
+        embedding=ModelConfigOverride(**embedding_kwargs),
+    )
+    return overrides if not overrides.is_empty() else None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="构建并评测 Microsoft GraphRAG 产前超声基线",
@@ -957,6 +1327,36 @@ def build_parser() -> argparse.ArgumentParser:
         default="text-embedding-3-large",
     )
     prepare_parser.add_argument("--k", type=int, default=16)
+    prepare_parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help="completion API key 环境变量名（写入 settings.yaml，如 MY_API_KEY）",
+    )
+    prepare_parser.add_argument(
+        "--api-base-env",
+        default=None,
+        help="completion API base 环境变量名（写入 settings.yaml，如 MY_API_BASE）",
+    )
+    prepare_parser.add_argument(
+        "--embedding-api-key-env",
+        default=None,
+        help="embedding 专属 API key 环境变量名（缺省沿用 --api-key-env）",
+    )
+    prepare_parser.add_argument(
+        "--embedding-api-base-env",
+        default=None,
+        help="embedding 专属 API base 环境变量名（缺省沿用 --api-base-env）",
+    )
+    prepare_parser.add_argument(
+        "--model-env",
+        default=None,
+        help="completion 模型名环境变量（写入 settings.yaml，如 GRAPHRAG_COMPLETION_MODEL）",
+    )
+    prepare_parser.add_argument(
+        "--embedding-model-env",
+        default=None,
+        help="embedding 模型名环境变量（写入 settings.yaml，缺省沿用 --model-env）",
+    )
 
     preflight_parser = subparsers.add_parser(
         "preflight",
@@ -975,6 +1375,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_project_argument(index_parser)
     _add_dataset_argument(index_parser)
+    _add_llm_override_arguments(index_parser)
     index_parser.add_argument(
         "--method",
         choices=("standard", "fast", "standard-update", "fast-update"),
@@ -994,6 +1395,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_project_argument(evaluate_parser)
     _add_dataset_argument(evaluate_parser)
+    _add_llm_override_arguments(evaluate_parser)
     evaluate_parser.add_argument(
         "--method",
         choices=("adaptive", "basic", "local", "drift", "global"),
@@ -1007,6 +1409,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
     )
+    evaluate_parser.add_argument(
+        "--source-match-mode",
+        choices=("exact", "evidence", "hybrid"),
+        default=None,
+        help="金标准来源校验口径；默认读取 scoring_config.yaml",
+    )
+    evaluate_parser.add_argument("--scoring-config", type=_path, default=None)
+    evaluate_parser.add_argument(
+        "--judge-mode",
+        choices=("off", "optional", "required"),
+        default="off",
+        help="LLM-as-Judge；默认关闭，失败时回退 lexical",
+    )
+    evaluate_parser.add_argument("--judge-model", default=None)
+    evaluate_parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
+    evaluate_parser.add_argument("--judge-api-base", default=None)
     evaluate_parser.add_argument("--fail-fast", action="store_true")
     evaluate_parser.add_argument("--verbose", action="store_true")
 
@@ -1021,11 +1439,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_project_argument(run_parser)
     _add_dataset_argument(run_parser)
-    run_parser.add_argument("--model", default="gpt-4.1")
+    run_parser.add_argument(
+        "--model",
+        default=None,
+        help="completion 模型名（初始化与运行时覆盖）",
+    )
     run_parser.add_argument(
         "--embedding-model",
-        default="text-embedding-3-large",
+        default=None,
+        help="embedding 模型名（初始化与运行时覆盖）",
     )
+    _add_llm_override_arguments(run_parser, include_model_names=False)
     run_parser.add_argument(
         "--index-method",
         choices=("standard", "fast"),
@@ -1043,6 +1467,20 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--skip-validation", action="store_true")
     run_parser.add_argument("--fail-fast", action="store_true")
     run_parser.add_argument("--verbose", action="store_true")
+    run_parser.add_argument(
+        "--source-match-mode",
+        choices=("exact", "evidence", "hybrid"),
+        default=None,
+    )
+    run_parser.add_argument("--scoring-config", type=_path, default=None)
+    run_parser.add_argument(
+        "--judge-mode",
+        choices=("off", "optional", "required"),
+        default="off",
+    )
+    run_parser.add_argument("--judge-model", default=None)
+    run_parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
+    run_parser.add_argument("--judge-api-base", default=None)
     return parser
 
 
@@ -1057,20 +1495,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 model=args.model,
                 embedding_model=args.embedding_model,
                 top_k=args.k,
+                model_env=args.model_env,
+                api_key_env=args.api_key_env,
+                api_base_env=args.api_base_env,
+                embedding_model_env=args.embedding_model_env,
+                embedding_api_key_env=args.embedding_api_key_env,
+                embedding_api_base_env=args.embedding_api_base_env,
             )
             result = {
-                "manifest_path": str(
-                    args.project_dir.resolve() / MANIFEST_NAME
-                ),
+                "manifest_path": str(args.project_dir.resolve() / MANIFEST_NAME),
                 "pdf_count": manifest["pdf_count"],
-                "indexed_document_count": manifest[
-                    "indexed_document_count"
-                ],
+                "indexed_document_count": manifest["indexed_document_count"],
                 "duplicate_count": manifest["duplicate_count"],
                 "error_count": manifest["error_count"],
-                "dataset_source_coverage": manifest[
-                    "dataset_source_coverage"
-                ],
+                "dataset_source_coverage": manifest["dataset_source_coverage"],
             }
         elif args.command == "preflight":
             result = preflight(
@@ -1086,6 +1524,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cache=not args.no_cache,
                 skip_validation=args.skip_validation,
                 verbose=args.verbose,
+                llm_overrides=_llm_overrides_from_args(args),
             )
         elif args.command == "evaluate":
             evaluation_result = evaluate(
@@ -1098,23 +1537,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 question_ids=args.question_id,
                 fail_fast=args.fail_fast,
                 verbose=args.verbose,
+                llm_overrides=_llm_overrides_from_args(args),
+                source_match_mode=args.source_match_mode,
+                scoring_config_path=args.scoring_config,
+                judge_mode=args.judge_mode,
+                judge_model=args.judge_model,
+                judge_api_key_env=args.judge_api_key_env,
+                judge_api_base=args.judge_api_base,
             )
             result = {
                 "output_path": evaluation_result["metadata"]["output_path"],
-                "raw_results_path": evaluation_result["metadata"][
-                    "raw_results_path"
-                ],
+                "raw_results_path": evaluation_result["metadata"]["raw_results_path"],
                 "metadata": evaluation_result["metadata"],
                 "summary": evaluation_result["summary"],
             }
         else:
+            llm_overrides = _llm_overrides_from_args(args)
             prepare_corpus(
                 raw_dir=args.raw_dir,
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
-                model=args.model,
-                embedding_model=args.embedding_model,
+                model=args.model or DEFAULT_COMPLETION_MODEL,
+                embedding_model=(args.embedding_model or DEFAULT_EMBEDDING_MODEL),
                 top_k=args.k,
+                model_env=args.model_env,
+                api_key_env=args.api_key_env,
+                api_base_env=args.api_base_env,
+                embedding_model_env=args.embedding_model_env,
+                embedding_api_key_env=args.embedding_api_key_env,
+                embedding_api_base_env=args.embedding_api_base_env,
             )
             index_result = build_index(
                 project_dir=args.project_dir,
@@ -1123,6 +1574,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cache=not args.no_cache,
                 skip_validation=args.skip_validation,
                 verbose=args.verbose,
+                llm_overrides=llm_overrides,
             )
             evaluation_result = evaluate(
                 project_dir=args.project_dir,
@@ -1134,6 +1586,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 question_ids=[],
                 fail_fast=args.fail_fast,
                 verbose=args.verbose,
+                llm_overrides=llm_overrides,
+                source_match_mode=args.source_match_mode,
+                scoring_config_path=args.scoring_config,
+                judge_mode=args.judge_mode,
+                judge_model=args.judge_model,
+                judge_api_key_env=args.judge_api_key_env,
+                judge_api_base=args.judge_api_base,
             )
             result = {
                 "index": index_result,

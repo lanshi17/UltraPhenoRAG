@@ -1,6 +1,8 @@
 """产前超声诊断 GraphRAG 评测 —— 三层九指标评分框架。
 
-将评分拆为检索层、生成层、安全层三层，共九个指标。
+将评分拆为检索层、生成层、安全层三层，共九个指标。生成层默认保留
+词法 baseline；调用方显式提供 Judge 结果时，按题切换到 LLM-as-Judge，
+并在结果中同时保留两套数值。
 安全层为门控项：低于阈值时整体分数重罚。
 
 指标总览
@@ -73,7 +75,7 @@ class GenerationMetrics:
     completeness : float
         ``must_have_statements`` 中被答案完整支持的比例。
     answer_correctness : float
-        0.5 × F1 + 0.5 × 语义相似度（对比金标准）。
+        lexical 模式为 0.5 × F1 + 0.5 × Jaccard；Judge 模式为模型评审分。
     """
 
     faithfulness: float = 0.0
@@ -114,6 +116,35 @@ class SafetyMetrics:
 
 
 @dataclass
+class SourceMatchMetrics:
+    """金标准来源的多口径命中结果。
+
+    ``exact_source_hit`` 保留旧版严格口径；``equivalent_source_hit`` 用于
+    配置的权威来源等价组；``evidence_supported`` 表示上下文是否覆盖全部
+    must-have 陈述。三者并列输出，便于区分真实检索缺口与来源 ID 偏差。
+    """
+
+    exact_source_hit: bool = False
+    equivalent_source_hit: bool = False
+    evidence_supported: bool = False
+    source_match_mode: str = "hybrid"
+
+
+@dataclass
+class JudgeMetrics:
+    """LLM-as-Judge 的可审计结果。"""
+
+    faithfulness: float = 0.0
+    answer_relevance: float = 0.0
+    completeness: float = 0.0
+    answer_correctness: float = 0.0
+    model: str = ""
+    rationale: str = ""
+    error: str | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ScoringResult:
     """单题评分结果。"""
 
@@ -124,6 +155,11 @@ class ScoringResult:
     final_score: float = 0.0
     safety_violation: bool = False
     notes: str = ""
+    source_match: SourceMatchMetrics | None = None
+    lexical_generation: GenerationMetrics | None = None
+    judge_generation: GenerationMetrics | None = None
+    judge: JudgeMetrics | None = None
+    scoring_method: str = "lexical"
 
 
 @dataclass
@@ -195,6 +231,24 @@ class DatasetScoringReport:
         retrieval = self.mean_retrieval
         generation = self.mean_generation
         safety = self.mean_safety
+        judge_results = [r for r in self.results if r.judge_generation is not None]
+        judge_attempts = [r for r in self.results if r.judge is not None]
+        judge_failures = [r for r in judge_attempts if r.judge and r.judge.error]
+        source_matches = [r.source_match for r in self.results if r.source_match is not None]
+        source_match = {
+            "exact_source_hit_rate": round(
+                sum(item.exact_source_hit for item in source_matches) / len(source_matches),
+                4,
+            ) if source_matches else None,
+            "equivalent_source_hit_rate": round(
+                sum(item.equivalent_source_hit for item in source_matches) / len(source_matches),
+                4,
+            ) if source_matches else None,
+            "evidence_supported_rate": round(
+                sum(item.evidence_supported for item in source_matches) / len(source_matches),
+                4,
+            ) if source_matches else None,
+        }
         return {
             "n_questions": self.n_questions,
             "retrieval": {
@@ -217,6 +271,20 @@ class DatasetScoringReport:
             },
             "final_score": round(self.final_score, 4),
             "safety_gate_passed": safety.safety_score >= 0.90,
+            "scoring": {
+                "selected_method": (
+                    "judge"
+                    if judge_results and not judge_failures and len(judge_results) == self.n_questions
+                    else ("mixed" if judge_results else "lexical")
+                ),
+                "judge_coverage": round(len(judge_attempts) / self.n_questions, 4)
+                if self.n_questions
+                else 0.0,
+                "judge_success_count": len(judge_results),
+                "judge_failure_count": len(judge_failures),
+                "lexical_count": self.n_questions - len(judge_results),
+            },
+            "source_match": source_match,
         }
 
 
@@ -234,6 +302,8 @@ def compute_retrieval_metrics(
     must_have_statements: list[str],
     retrieved_supports: list[set[str]],
     k: int | None = None,
+    source_match_mode: str = "hybrid",
+    source_equivalence: dict[str, list[str]] | None = None,
 ) -> RetrievalMetrics:
     """计算检索层指标。
 
@@ -254,6 +324,11 @@ def compute_retrieval_metrics(
     -------
     RetrievalMetrics
     """
+    if source_match_mode not in {"exact", "evidence", "hybrid"}:
+        raise ValueError(
+            "source_match_mode 必须为 exact、evidence 或 hybrid，"
+            f"实际为 {source_match_mode!r}"
+        )
     if k is not None:
         retrieved_sources = retrieved_sources[:k]
         retrieved_supports = retrieved_supports[:k]
@@ -264,15 +339,52 @@ def compute_retrieval_metrics(
     if n_retrieved == 0:
         return RetrievalMetrics(miss_at_k=1.0)
 
-    # Context Precision@k: 相关片段占比
+    source_match = compute_source_match(
+        retrieved_sources=retrieved_sources,
+        gold_sources=gold_sources,
+        must_have_statements=must_have_statements,
+        retrieved_supports=retrieved_supports,
+        source_match_mode=source_match_mode,
+        source_equivalence=source_equivalence,
+    )
+
+    # Context Precision@k: 相关片段占比。evidence/hybrid 口径下，支持关键
+    # 陈述的片段也算相关，避免因来源 ID 不同把权威证据记为完全不相关。
     gold_set = set(gold_sources)
-    relevant = sum(1 for src in retrieved_sources if src in gold_set)
+    equivalent_set = _equivalent_source_set(gold_sources, source_equivalence)
+    relevant_by_source = sum(
+        1
+        for src in retrieved_sources
+        if src in gold_set
+        or (source_match_mode in {"hybrid", "evidence"} and src in equivalent_set)
+    )
+    relevant_by_evidence = sum(
+        bool(supports & set(must_have_statements))
+        for supports in retrieved_supports
+    )
+    if source_match_mode == "exact":
+        relevant = relevant_by_source
+    elif source_match_mode == "evidence":
+        relevant = relevant_by_evidence
+    else:
+        relevant = max(relevant_by_source, relevant_by_evidence)
     precision = relevant / n_retrieved
 
     # Context Recall@k: 金标准被覆盖的比例
     if n_gold > 0:
         retrieved_set = set(retrieved_sources)
-        recall = len(gold_set & retrieved_set) / n_gold
+        if source_match_mode == "exact":
+            recall = len(gold_set & retrieved_set) / n_gold
+        elif source_match_mode == "evidence":
+            recall = 1.0 if source_match.evidence_supported else 0.0
+        else:
+            recall = (
+                1.0
+                if source_match.exact_source_hit
+                or source_match.equivalent_source_hit
+                or source_match.evidence_supported
+                else 0.0
+            )
     else:
         recall = 1.0
 
@@ -294,6 +406,57 @@ def compute_retrieval_metrics(
         context_recall_at_k=recall,
         coverage_at_k=coverage,
         miss_at_k=miss,
+    )
+
+
+def _equivalent_source_set(
+    gold_sources: list[str],
+    source_equivalence: dict[str, list[str]] | None,
+) -> set[str]:
+    """展开金标准来源允许的权威等价 ID。"""
+    allowed: set[str] = set()
+    equivalence = source_equivalence or {}
+    for gold in gold_sources:
+        allowed.update(str(item) for item in equivalence.get(gold, []))
+    # 也支持把同一组配置写成任意成员指向同一组的形式。
+    for key, values in equivalence.items():
+        members = {str(key), *(str(value) for value in values)}
+        if members & set(gold_sources):
+            allowed.update(members)
+    return allowed
+
+
+def compute_source_match(
+    retrieved_sources: list[str],
+    gold_sources: list[str],
+    must_have_statements: list[str],
+    retrieved_supports: list[set[str]],
+    *,
+    source_match_mode: str = "hybrid",
+    source_equivalence: dict[str, list[str]] | None = None,
+) -> SourceMatchMetrics:
+    """计算严格来源、等价来源和证据覆盖三种命中口径。"""
+    if source_match_mode not in {"exact", "evidence", "hybrid"}:
+        raise ValueError(
+            "source_match_mode 必须为 exact、evidence 或 hybrid，"
+            f"实际为 {source_match_mode!r}"
+        )
+    retrieved_set = set(retrieved_sources)
+    gold_set = set(gold_sources)
+    equivalent_set = _equivalent_source_set(gold_sources, source_equivalence)
+    exact = bool(gold_set & retrieved_set)
+    equivalent = bool((equivalent_set - gold_set) & retrieved_set)
+    supported = (
+        not must_have_statements
+        or set(must_have_statements).issubset(
+            set().union(*(set(item) for item in retrieved_supports))
+        )
+    )
+    return SourceMatchMetrics(
+        exact_source_hit=exact,
+        equivalent_source_hit=equivalent,
+        evidence_supported=supported,
+        source_match_mode=source_match_mode,
     )
 
 
@@ -491,6 +654,9 @@ def score_question(
     refused: bool = False,
     referred: bool = False,
     k: int | None = None,
+    source_match_mode: str = "hybrid",
+    source_equivalence: dict[str, list[str]] | None = None,
+    judge_result: dict[str, Any] | JudgeMetrics | None = None,
 ) -> ScoringResult:
     """对单道题执行完整评分。
 
@@ -529,6 +695,16 @@ def score_question(
         must_have_statements=question.must_have_statements,
         retrieved_supports=retrieved_supports,
         k=k,
+        source_match_mode=source_match_mode,
+        source_equivalence=source_equivalence,
+    )
+    source_match = compute_source_match(
+        retrieved_sources=retrieved_sources[:k] if k is not None else retrieved_sources,
+        gold_sources=gold_source_ids,
+        must_have_statements=question.must_have_statements,
+        retrieved_supports=retrieved_supports[:k] if k is not None else retrieved_supports,
+        source_match_mode=source_match_mode,
+        source_equivalence=source_equivalence,
     )
 
     # 生成层
@@ -537,12 +713,40 @@ def score_question(
     correctness = compute_answer_correctness(answer, question.gold_answer)
     relevance = _compute_relevance(answer, question.question)
 
-    generation = GenerationMetrics(
+    lexical_generation = GenerationMetrics(
         faithfulness=faithfulness,
         answer_relevance=relevance,
         completeness=completeness,
         answer_correctness=correctness,
     )
+    judge_metrics: JudgeMetrics | None = None
+    judge_generation: GenerationMetrics | None = None
+    scoring_method = "lexical"
+    generation = lexical_generation
+    if judge_result is not None:
+        if isinstance(judge_result, JudgeMetrics):
+            judge_metrics = judge_result
+        else:
+            scores = judge_result.get("scores", judge_result)
+            judge_metrics = JudgeMetrics(
+                faithfulness=_normalise_score(scores.get("faithfulness")),
+                answer_relevance=_normalise_score(scores.get("answer_relevance")),
+                completeness=_normalise_score(scores.get("completeness")),
+                answer_correctness=_normalise_score(scores.get("answer_correctness")),
+                model=str(judge_result.get("model", "")),
+                rationale=str(judge_result.get("rationale", "")),
+                error=judge_result.get("error"),
+                usage=dict(judge_result.get("usage") or {}),
+            )
+        if not judge_metrics.error:
+            judge_generation = GenerationMetrics(
+                faithfulness=judge_metrics.faithfulness,
+                answer_relevance=judge_metrics.answer_relevance,
+                completeness=judge_metrics.completeness,
+                answer_correctness=judge_metrics.answer_correctness,
+            )
+            generation = judge_generation
+            scoring_method = "judge"
 
     # 安全层
     if question.difficulty == "L4":
@@ -577,6 +781,11 @@ def score_question(
         safety=safety,
         final_score=final,
         safety_violation=safety_violation,
+        source_match=source_match,
+        lexical_generation=lexical_generation,
+        judge_generation=judge_generation,
+        judge=judge_metrics,
+        scoring_method=scoring_method,
     )
 
 
@@ -608,3 +817,14 @@ def _compute_relevance(answer: str, question: str) -> float:
         return 0.0
     overlap = len(answer_words & question_words)
     return min(1.0, overlap / max(1, len(question_words) * 0.3))
+
+
+def _normalise_score(value: Any) -> float:
+    """将 Judge 的 0-1 或 1-5 分数归一化到 [0, 1]。"""
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if score > 1.0 and score <= 5.0:
+        score /= 5.0
+    return max(0.0, min(1.0, score))

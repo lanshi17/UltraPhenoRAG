@@ -30,9 +30,11 @@ class ModelConfigOverride:
     """
 
     model: str | None = None
+    model_env: str | None = None
     model_provider: str | None = None
     type: str | None = None
     api_base: str | None = None
+    api_base_env: str | None = None
     api_version: str | None = None
     api_key_env: str | None = None
     azure_deployment_name: str | None = None
@@ -44,9 +46,11 @@ class ModelConfigOverride:
             value is not None
             for value in (
                 self.model,
+                self.model_env,
                 self.model_provider,
                 self.type,
                 self.api_base,
+                self.api_base_env,
                 self.api_version,
                 self.api_key_env,
                 self.azure_deployment_name,
@@ -54,16 +58,17 @@ class ModelConfigOverride:
             )
         )
 
-    def _validate_api_key_env(self) -> None:
-        if self.api_key_env and not _ENV_NAME_PATTERN.fullmatch(self.api_key_env):
-            raise ValueError("api_key_env 必须是合法环境变量名，例如 GRAPHRAG_API_KEY")
+    def _validate_env_names(self) -> None:
+        for name in (self.api_key_env, self.api_base_env, self.model_env):
+            if name and not _ENV_NAME_PATTERN.fullmatch(name):
+                raise ValueError("环境变量名必须是合法标识符，例如 GRAPHRAG_API_KEY")
 
     def to_settings_dict(self) -> dict[str, Any]:
         """转换为可写入 settings.yaml 的配置。
 
         API key 只写入环境变量引用，不写入实际密钥。
         """
-        self._validate_api_key_env()
+        self._validate_env_names()
         result: dict[str, Any] = {}
         field_values = {
             "model": self.model,
@@ -76,8 +81,12 @@ class ModelConfigOverride:
         result.update(
             {key: value for key, value in field_values.items() if value is not None}
         )
+        if self.model_env:
+            result["model"] = f"${{{self.model_env}}}"
         if self.api_key_env:
             result["api_key"] = f"${{{self.api_key_env}}}"
+        if self.api_base_env:
+            result["api_base"] = f"${{{self.api_base_env}}}"
         if self.call_args is not None:
             result["call_args"] = deepcopy(dict(self.call_args))
         return result
@@ -85,10 +94,14 @@ class ModelConfigOverride:
     def to_runtime_dict(self) -> dict[str, Any]:
         """转换为传给 ``load_config`` 的运行时配置。"""
         result = self.to_settings_dict()
+        if self.model_env:
+            result["model"] = os.getenv(self.model_env, "")
         if self.api_key_env:
             # 缺失时保留空字符串，让 preflight 给出可读的凭据错误，而不是
             # 在配置覆盖阶段直接泄露或抛出不明确的异常。
             result["api_key"] = os.getenv(self.api_key_env, "")
+        if self.api_base_env:
+            result["api_base"] = os.getenv(self.api_base_env, "")
         return result
 
 

@@ -38,6 +38,8 @@ class QueryResult:
     """原始查询字符串。"""
     method: str = ""
     """使用的搜索方法 (global / local / drift / basic)。"""
+    telemetry: dict[str, Any] = field(default_factory=dict)
+    """查询级事件、图探索和 token/cost 统计。"""
 
     def get_context_df(self, name: str) -> pd.DataFrame | None:
         """按名称获取上下文 DataFrame。

@@ -5,6 +5,14 @@
 # ── 检索层配置 ────────────────────────────────────────────────────────────────
 retrieval:
   k: 16                          # top-k 截断位置
+  # 来源命中口径：exact 仅认指定 guide；evidence 认上下文覆盖关键陈述；
+  # hybrid（默认）三者并列记录并用证据覆盖降低来源 ID 偏差造成的假阴性。
+  source_match_mode: hybrid
+  source_equivalence: {}
+    # 示例：将实际使用的权威指南 ID 加入对应金标准 guide 的等价组。
+    # ISUOG-midtrimester-2022:
+    #   - ACOG-midtrimester-ultrasound
+    #   - ACR-obstetric-ultrasound
   precision_threshold: 0.75      # Context Precision@k 建议下限
   recall_threshold: 0.85         # Context Recall@k 建议下限
   coverage_threshold: 0.80       # Coverage@k 建议下限
