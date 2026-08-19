@@ -1,19 +1,21 @@
 """LightRAG baseline client package."""
 
-from .client import GraphRAGClient, LightRAGClient
+from .client import LightRAGClient
 from .config.llm_config import (
     DEFAULT_COMPLETION_MODEL,
     DEFAULT_EMBEDDING_MODEL,
     LLMConfigOverrides,
     ModelConfigOverride,
 )
-from .enums import IndexMethod, SearchMethod
+from .index_methods import IndexMethod
 from .models import IndexResult, QueryResult
+from .search_methods import SearchMethod
+from .states import ClientState
 
 __all__ = [
-    "GraphRAGClient",
     "DEFAULT_COMPLETION_MODEL",
     "DEFAULT_EMBEDDING_MODEL",
+    "ClientState",
     "IndexMethod",
     "IndexResult",
     "LightRAGClient",

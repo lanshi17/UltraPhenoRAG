@@ -90,7 +90,7 @@ def main() -> None:
               "partial", "incorrect", "correct", "correct", "correct"]
     k = cohens_kappa(rater1, rater2)
     print(f"    Cohen's κ = {k:.4f} ({interpret_kappa(k)})")
-    print(f"    阈值: ≥ 0.80 (几乎完全一致)")
+    print("    阈值: ≥ 0.80 (几乎完全一致)")
     print(f"    达标: {'✓' if k >= 0.80 else '✗ (需更多训练或仲裁)'}")
 
     # 8. 评分框架演示
@@ -116,9 +116,9 @@ def main() -> None:
 
     print("\n" + "=" * 70)
     print("快速入门完成。")
-    print(f"文档: docs/benchmark-sop.md")
-    print(f"样例: benchmark/qa/dataset/sample_questions.json")
-    print(f"配置: benchmark/qa/dataset/scoring_config.yaml")
+    print("文档: docs/benchmark-sop.md")
+    print("样例: benchmark/qa/dataset/sample_questions.json")
+    print("配置: benchmark/qa/dataset/scoring_config.yaml")
     print("=" * 70)
 
 

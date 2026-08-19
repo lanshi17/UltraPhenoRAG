@@ -3,6 +3,32 @@
 使用 Microsoft GraphRAG 对产前超声指南语料建库，并用
 `benchmark/qa/dataset/sample_questions.json` 执行离线基线评测。
 
+## 代码架构
+
+```
+benchmark/
+├── .env                  # 统一 LLM 供应商配置（RAG_* 变量，两个基线共用）
+├── common/               # 两个基线共享的评测逻辑（不重复造轮子）
+│   ├── corpus.py         # PDF 提取、来源 ID 映射、manifest 写入
+│   ├── usage.py          # token/成本统计聚合
+│   ├── answers.py        # 回答归一化、拒答/转诊检测、语句支持判定
+│   ├── retrieval.py      # 检索上下文抽取（DataFrame/list 双兼容）
+│   └── scoring_options.py# 来源校验策略（scoring_config.yaml）
+├── config/               # 框架无关的环境变量解析
+├── qa/                   # 数据集 schema、三层评分、LLM-as-Judge
+├── baseline/
+│   ├── microsoft_graphrag_client/   # Microsoft GraphRAG 客户端 + 评测入口
+│   └── light_rag_client/            # LightRAG 客户端 + 评测入口
+├── data/                 # 语料与索引产物（不入库）
+└── results/              # 评测结果（JSON/JSONL）
+tests/                    # pytest 测试（与源码结构对应）
+├── conftest.py           # sys.path 与 vendored LightRAG 引导
+├── test_common_*.py      # 共享模块单元测试
+└── baseline/             # 各基线的行为/冒烟测试
+```
+
+运行测试：`uv run --with pytest python -m pytest tests/ -v`
+
 ## 运行
 
 ```bash
@@ -12,8 +38,8 @@ uv sync
 uv run python -m benchmark.baseline.microsoft_graphrag_client.benchmark prepare
 
 # 2. 在生成的文件中配置模型密钥
-# benchmark/data/microsoft_graphrag/.env
-# GRAPHRAG_API_KEY=<your-api-key>
+# benchmark/.env
+# RAG_API_KEY=<your-api-key>
 
 # 3. 不发起远程请求的本地预检
 uv run python -m benchmark.baseline.microsoft_graphrag_client.benchmark preflight
@@ -52,17 +78,18 @@ uv run python -m benchmark.baseline.microsoft_graphrag_client.benchmark run
 
 ## LLM 模型配置
 
-模型与供应商在 `benchmark/data/microsoft_graphrag/.env` + `settings.yaml`
-中配置。`.env.example` 为不含密钥的模板。
+模型与供应商统一在 `benchmark/.env` + `settings.yaml` 中配置。
+所有基准均只读取 `benchmark/.env`；`.env.example` 为不含密钥的模板。
 
 ```dotenv
 # .env
-GRAPHRAG_API_KEY=<your-api-key>
-GRAPHRAG_API_BASE=https://your-gateway.example.com/v1   # 必须含 /v1
+# benchmark/.env（Microsoft GraphRAG 与 LightRAG 共用）
+RAG_API_KEY=<your-api-key>
+RAG_API_BASE=https://your-gateway.example.com/v1   # 必须含 /v1
 ```
 
 - 默认 completion 模型 `gpt-4.1`、embedding 模型 `text-embedding-3-large`
-  （`settings.yaml` 中引用 `${GRAPHRAG_API_KEY}` / `${GRAPHRAG_API_BASE}`）。
+  （`settings.yaml` 中引用 `${RAG_API_KEY}` / `${RAG_API_BASE}`）。
 - 切换模型或供应商时，可在命令行**运行时覆盖**（不改写 `settings.yaml`）：
 
 ```bash
@@ -80,10 +107,9 @@ uv run python -m benchmark.baseline.microsoft_graphrag_client.benchmark evaluate
 
 ### 自定义 `.env` 环境变量名
 
-默认使用 `GRAPHRAG_API_KEY` / `GRAPHRAG_API_BASE` /
-`GRAPHRAG_COMPLETION_MODEL` / `GRAPHRAG_EMBEDDING_MODEL`，均可改为自定义
-变量名（如 `MY_API_KEY`、`MY_MODEL`），completion 与 embedding 也可分别使用
-不同变量：
+默认使用 `RAG_API_KEY` / `RAG_API_BASE` /
+`RAG_COMPLETION_MODEL` / `RAG_EMBEDDING_MODEL`。Microsoft GraphRAG 与
+LightRAG 不再使用各自独立的环境变量：
 
 ```bash
 # 持久化到 settings.yaml（在 .env 中定义对应变量即可）：
@@ -134,8 +160,9 @@ uv run python -m benchmark.baseline.microsoft_graphrag_client.vectorize \
 ## LightRAG 基线
 
 仓库内置的 LightRAG 版本位于 `benchmark/baseline/libs/light_rag`，客户端和评测入口位于
-`benchmark/baseline/light_rag_client`。配置 `LLM_BINDING`、`LLM_MODEL`、
-`LLM_BINDING_HOST`、`LLM_BINDING_API_KEY`、`EMBEDDING_MODEL` 和 `EMBEDDING_DIM` 后运行：
+`benchmark/baseline/light_rag_client`。配置统一的 `RAG_MODEL_PROVIDER`、`RAG_COMPLETION_MODEL`、
+`RAG_EMBEDDING_MODEL`、`RAG_API_BASE`、`RAG_API_KEY` 和
+`RAG_EMBEDDING_DIMENSION` 后运行：
 
 ```bash
 uv run python \

@@ -1,0 +1,1 @@
+"""LightRAG baseline tests."""

@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-import pytest
+import numpy as np
+from lightrag.utils import EmbeddingFunc
 
-_LIGHTRAG_ROOT = Path(__file__).resolve().parent / "baseline" / "libs" / "light_rag"
-sys.path.insert(0, str(_LIGHTRAG_ROOT))
-
-pytest.importorskip("numpy")
-pytest.importorskip("pandas")
-
-import numpy as np  # noqa: E402
-
-from benchmark.baseline.light_rag_client import LightRAGClient  # noqa: E402
-from lightrag.utils import EmbeddingFunc  # noqa: E402
+from benchmark.baseline.light_rag_client import LightRAGClient
 
 
 async def _embedding(texts: list[str]) -> np.ndarray:
@@ -75,4 +66,3 @@ def test_real_index_and_all_query_modes(tmp_path: Path) -> None:
             assert result.method == ("drift" if method == "drift" else method)
     finally:
         client.close()
-

@@ -15,8 +15,16 @@ benchmark/baseline/libs
 benchmark/data
 !benchmark/data/
 !benchmark/data/microsoft_graphrag/
-!benchmark/data/microsoft_graphrag/.env.example
+!benchmark/data/microsoft_graphrag/settings.yaml
+!benchmark/data/microsoft_graphrag/prompts/
+!benchmark/data/microsoft_graphrag/corpus_manifest.json
 **/.env
+!.env.example
+!benchmark/.env.example
 benchmark/data/raw
 benchmark/data/microsoft_graphrag/cache
 benchmark/data/microsoft_graphrag/output
+benchmark/data/microsoft_graphrag/logs
+benchmark/data/microsoft_graphrag/input
+benchmark/data/microsoft_graphrag/benchmark
+benchmark/data/light_rag/input/

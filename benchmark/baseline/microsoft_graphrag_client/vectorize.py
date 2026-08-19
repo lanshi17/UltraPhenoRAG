@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import time
@@ -43,11 +42,11 @@ from benchmark.baseline.microsoft_graphrag_client.client import GraphRAGClient
 from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
     LLMConfigOverrides,
     ModelConfigOverride,
-    load_project_env,
 )
 from benchmark.baseline.microsoft_graphrag_client.utils.async_runner import (
     AsyncRunner,
 )
+from benchmark.config import load_environment
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PROJECT_DIR = REPOSITORY_ROOT / "benchmark" / "data" / "microsoft_graphrag"
@@ -120,7 +119,7 @@ def _chunk_text(
 
 def _redact_error(exc: BaseException) -> str:
     message = str(exc)
-    key = os.getenv("GRAPHRAG_API_KEY", "")
+    key = load_environment().api_key
     if key:
         message = message.replace(key, "<redacted>")
     return message
@@ -148,7 +147,7 @@ def vectorize_corpus(
     manifest_path = output_dir / MANIFEST_NAME
 
     # 项目 .env 需在创建 embedding 前加载（自定义 endpoint / 密钥）。
-    load_project_env(project_dir)
+    load_environment()
     llm_overrides = LLMConfigOverrides(
         embedding=ModelConfigOverride(
             model=embedding_model,
@@ -352,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-key-env",
         default=None,
-        help="embedding API key 环境变量名（如 GRAPHRAG_API_KEY）",
+        help="embedding API key 环境变量名（如 RAG_API_KEY）",
     )
     return parser
 

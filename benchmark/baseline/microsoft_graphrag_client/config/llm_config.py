@@ -13,6 +13,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from benchmark.config import load_environment
+
 DEFAULT_COMPLETION_MODEL = "gpt-4.1"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
 
@@ -105,14 +107,9 @@ class ModelConfigOverride:
         return result
 
 
-def load_project_env(root_dir: str | os.PathLike[str]) -> None:
-    """在解析运行时覆盖前加载项目目录中的 ``.env``。"""
-    from dotenv import load_dotenv
-
-    env_path = os.fspath(root_dir)
-    env_file = os.path.join(env_path, ".env")
-    if os.path.isfile(env_file):
-        load_dotenv(env_file, override=False)
+def load_project_env() -> None:
+    """加载共享的 ``benchmark/.env``。"""
+    load_environment()
 
 
 @dataclass(frozen=True)

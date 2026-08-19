@@ -7,13 +7,16 @@ importable.
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-DEFAULT_COMPLETION_MODEL = "gpt-4o-mini"
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+from benchmark.config import (
+    DEFAULT_COMPLETION_MODEL,
+    DEFAULT_EMBEDDING_MODEL,
+    load_environment,
+)
+
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -66,12 +69,9 @@ class LLMConfigOverrides:
         return bool(self.completion.api_key_env or self.embedding.api_key_env)
 
 
-def load_project_env(root_dir: str | os.PathLike[str]) -> None:
-    from dotenv import load_dotenv
-
-    env_file = os.path.join(os.fspath(root_dir), ".env")
-    if os.path.isfile(env_file):
-        load_dotenv(env_file, override=False)
+def load_project_env() -> None:
+    """Load the shared ``benchmark/.env`` file."""
+    load_environment()
 
 
 __all__ = [

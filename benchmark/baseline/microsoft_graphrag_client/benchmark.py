@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
 import sys
 import time
-import unicodedata
 from collections import Counter
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -18,7 +15,6 @@ from typing import Any, Sequence
 
 import pandas as pd
 import yaml
-from pypdf import PdfReader
 
 from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
     DEFAULT_COMPLETION_MODEL,
@@ -26,15 +22,34 @@ from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
     LLMConfigOverrides,
     ModelConfigOverride,
 )
+from benchmark.common import (
+    MANIFEST_NAME,
+    aggregate_usage,
+    canonical_source_id,
+    empty_usage,
+    extract_pdf_text,
+    extract_retrieved_context,
+    load_scoring_options,
+    merge_usage,
+    normalize_response,
+    now_iso,
+    safe_slug,
+    safety_actions,
+    sha256_file,
+    source_id_from_text,
+    supported_statements,
+    write_manifest,
+)
+from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
 from benchmark.qa import (
     DatasetScoringReport,
-    JudgeConfig,
     EntityType,
+    JudgeConfig,
     Question,
     compute_dataset_fingerprint,
+    judge_answer,
     load_questions,
     score_question,
-    judge_answer,
     validate_dataset,
 )
 
@@ -45,26 +60,6 @@ DEFAULT_DATASET = (
     REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "sample_questions.json"
 )
 DEFAULT_RESULTS_DIR = REPOSITORY_ROOT / "benchmark" / "results" / "microsoft_graphrag"
-DEFAULT_SCORING_CONFIG = (
-    REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "scoring_config.yaml"
-)
-MANIFEST_NAME = "corpus_manifest.json"
-
-CANONICAL_SOURCE_FILES: dict[str, str] = {
-    "ISUOG_2020_fetal-CNS-part1.pdf": "ISUOG-cns-2020",
-    "ISUOG_2022_routine-mid-trimester-scan.pdf": "ISUOG-midtrimester-2022",
-    "ISUOG_2023_11-14-week-ultrasound-scan.pdf": "ISUOG-11-14w-2023",
-    "ISUOG_2023_fetal-cardiac-screening.pdf": ("ISUOG-fetal-cardiac-screening-2023"),
-    "ISUOG-Practice-Guidelines-CNS-part-1-targeted-neurosonography.pdf": (
-        "ISUOG-cns-2020"
-    ),
-    "ISUOG-Practice-Guidelines-Updated-performance-of-11-14-week-ultrasound-scan.pdf": (
-        "ISUOG-11-14w-2023"
-    ),
-    "UOG-2023-Carvalho-ISUOG-Practice-Guidelines-updated-fetal-cardiac-screening.pdf": (
-        "ISUOG-fetal-cardiac-screening-2023"
-    ),
-}
 
 ADAPTIVE_SEARCH_METHODS = {
     "basic": "basic",
@@ -80,152 +75,8 @@ PLACEHOLDER_API_KEYS = {
 }
 
 
-def _load_scoring_options(path: Path | None) -> dict[str, Any]:
-    """读取来源校验策略，不影响旧结果文件的解析。"""
-    config_path = (path or DEFAULT_SCORING_CONFIG).resolve()
-    if not config_path.is_file():
-        return {"source_match_mode": "hybrid", "source_equivalence": {}}
-    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    retrieval = data.get("retrieval", {}) if isinstance(data, dict) else {}
-    mode = str(retrieval.get("source_match_mode", "hybrid"))
-    equivalence = retrieval.get("source_equivalence", {})
-    if not isinstance(equivalence, dict):
-        equivalence = {}
-    return {
-        "source_match_mode": mode,
-        "source_equivalence": {
-            str(key): [str(item) for item in values]
-            for key, values in equivalence.items()
-            if isinstance(values, (list, tuple, set))
-        },
-    }
-
-
-def _empty_usage() -> dict[str, Any]:
-    return {
-        "request_count": 0,
-        "failed_request_count": 0,
-        "prompt_tokens": None,
-        "completion_tokens": None,
-        "total_tokens": None,
-        "input_cost_usd": None,
-        "output_cost_usd": None,
-        "total_cost_usd": None,
-        "cost_available": False,
-        "models": [],
-        "by_model": {},
-    }
-
-
-def _merge_usage(*usages: dict[str, Any]) -> dict[str, Any]:
-    """合并 query/Judge usage；未知 token/cost 保持 None，不伪造为 0。"""
-    numeric_fields = (
-        "request_count",
-        "failed_request_count",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "input_cost_usd",
-        "output_cost_usd",
-        "total_cost_usd",
-    )
-    result = _empty_usage()
-    for field in numeric_fields:
-        values = [item.get(field) for item in usages if item.get(field) is not None]
-        if values:
-            result[field] = sum(float(value) for value in values)
-            if field.endswith("tokens"):
-                result[field] = int(result[field])
-    result["cost_available"] = bool(usages) and all(
-        item.get("cost_available") is True
-        for item in usages
-        if item.get("request_count", 0) or item.get("total_tokens") is not None
-    )
-    result["models"] = sorted(
-        {str(model) for item in usages for model in item.get("models", [])}
-    )
-    return result
-
-
-def _aggregate_usage(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """汇总查询/Judge usage，保留缺失成本的可见性。"""
-    result: dict[str, Any] = {
-        "recorded_query_count": 0,
-        "recorded_judge_count": 0,
-        "cost_missing_count": 0,
-        "query": _empty_usage(),
-        "judge": _empty_usage(),
-        "total": _empty_usage(),
-    }
-    for scope in ("query", "judge", "total"):
-        values = [
-            row.get("usage", {}).get(scope)
-            for row in rows
-            if isinstance(row.get("usage", {}).get(scope), dict)
-        ]
-        result[scope] = _merge_usage(*values) if values else _empty_usage()
-    result["recorded_query_count"] = sum(
-        isinstance(row.get("usage", {}).get("query"), dict) for row in rows
-    )
-    result["recorded_judge_count"] = sum(
-        isinstance(row.get("usage", {}).get("judge"), dict) for row in rows
-    )
-    result["cost_missing_count"] = sum(
-        isinstance(row.get("usage", {}).get("total"), dict)
-        and not row["usage"]["total"].get("cost_available", False)
-        for row in rows
-    )
-    return result
-
-
 class BenchmarkPreflightError(RuntimeError):
     """评测前置条件不满足。"""
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _safe_slug(value: str, max_length: int = 120) -> str:
-    normalized = unicodedata.normalize("NFKD", value)
-    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", ascii_value)
-    slug = re.sub(r"-{2,}", "-", slug).strip("-._")
-    return (slug or "document")[:max_length]
-
-
-def canonical_source_id(pdf_path: Path) -> str:
-    """将已知评测来源映射到数据集使用的稳定文档 ID。"""
-    return CANONICAL_SOURCE_FILES.get(pdf_path.name, _safe_slug(pdf_path.stem))
-
-
-def _extract_pdf_text(pdf_path: Path) -> tuple[str, int, list[str]]:
-    reader = PdfReader(str(pdf_path), strict=False)
-    page_sections: list[str] = []
-    warnings: list[str] = []
-
-    for page_number, page in enumerate(reader.pages, start=1):
-        try:
-            text = page.extract_text() or ""
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"page {page_number}: {type(exc).__name__}: {exc}")
-            continue
-
-        text = text.replace("\x00", "")
-        text = re.sub(r"[ \t]+\n", "\n", text)
-        text = re.sub(r"\n{4,}", "\n\n\n", text).strip()
-        if text:
-            page_sections.append(f"## Page {page_number}\n\n{text}")
-
-    return "\n\n".join(page_sections), len(reader.pages), warnings
 
 
 def _apply_llm_env_references(
@@ -399,9 +250,9 @@ def prepare_corpus(
     documents: list[dict[str, Any]] = []
     extracted_documents: dict[tuple[str, str], dict[str, Any]] = {}
     for index, pdf_path in enumerate(pdf_paths, start=1):
-        pdf_hash = _sha256(pdf_path)
+        pdf_hash = sha256_file(pdf_path)
         source_id = canonical_source_id(pdf_path)
-        output_name = f"{_safe_slug(source_id)}--{pdf_hash[:12]}.txt"
+        output_name = f"{safe_slug(source_id)}--{pdf_hash[:12]}.txt"
         output_path = input_dir / output_name
 
         duplicate = extracted_documents.get((source_id, pdf_hash))
@@ -428,7 +279,7 @@ def prepare_corpus(
         print(f"[{index}/{len(pdf_paths)}] 提取 {pdf_path.name}", flush=True)
 
         try:
-            body, page_count, page_warnings = _extract_pdf_text(pdf_path)
+            body, page_count, page_warnings = extract_pdf_text(pdf_path)
             if not body.strip():
                 raise ValueError("未提取到可索引文本")
 
@@ -472,7 +323,7 @@ def prepare_corpus(
         item["source_id"] for item in documents if item["status"] in {"ok", "partial"}
     }
     manifest = {
-        "created_at": _now_iso(),
+        "created_at": now_iso(),
         "raw_dir": str(raw_dir),
         "project_dir": str(project_dir),
         "project_created": project_created,
@@ -489,11 +340,7 @@ def prepare_corpus(
             successful_source_ids,
         ),
     }
-    manifest_path = project_dir / MANIFEST_NAME
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_manifest(project_dir, manifest)
     return manifest
 
 
@@ -597,7 +444,7 @@ def preflight(
             issues.append("索引产物不完整，缺少: " + ", ".join(missing_tables))
 
     return {
-        "checked_at": _now_iso(),
+        "checked_at": now_iso(),
         "project_dir": str(project_dir),
         "dataset_path": str(dataset_path),
         "input_document_count": len(input_files),
@@ -656,7 +503,7 @@ def build_index(
         skip_validation=skip_validation,
     )
     summary = {
-        "completed_at": _now_iso(),
+        "completed_at": now_iso(),
         "method": method,
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "workflow_names": result.workflow_names,
@@ -674,18 +521,9 @@ def build_index(
 
 
 def _as_string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple, set)):
-        return [str(item) for item in value if item is not None]
-    if isinstance(value, str):
-        return [value] if value else []
-    try:
-        if pd.isna(value):
-            return []
-    except (TypeError, ValueError):
-        pass
-    return [str(value)]
+    from benchmark.common.retrieval import as_string_list
+
+    return as_string_list(value)
 
 
 class SourceResolver:
@@ -716,7 +554,7 @@ class SourceResolver:
             title = str(row.get("title", ""))
             source_id = title_sources.get(title) or title_sources.get(Path(title).name)
             if source_id is None:
-                source_id = _source_id_from_text(str(row.get("text", "")))
+                source_id = source_id_from_text(str(row.get("text", "")))
             if document_id and source_id:
                 self._document_sources[document_id] = source_id
 
@@ -733,7 +571,7 @@ class SourceResolver:
                 None,
             )
             if source_id is None:
-                source_id = _source_id_from_text(str(row.get("text", "")))
+                source_id = source_id_from_text(str(row.get("text", "")))
             if source_id is None:
                 continue
 
@@ -752,120 +590,7 @@ class SourceResolver:
         normalized_text = text.strip()
         if normalized_text in self._text_sources:
             return self._text_sources[normalized_text]
-        return _source_id_from_text(text) or f"unresolved:{record_key}"
-
-
-def _source_id_from_text(text: str) -> str | None:
-    match = re.search(r"(?m)^SOURCE_ID:\s*(\S+)\s*$", text)
-    return match.group(1) if match else None
-
-
-def _context_frames(context_data: Any) -> list[tuple[str, pd.DataFrame]]:
-    frames: list[tuple[str, pd.DataFrame]] = []
-    if isinstance(context_data, pd.DataFrame):
-        return [("sources", context_data)]
-    if isinstance(context_data, dict):
-        for name, value in context_data.items():
-            if isinstance(value, pd.DataFrame):
-                frames.append((str(name), value))
-            elif isinstance(value, list):
-                for item in value:
-                    if isinstance(item, pd.DataFrame):
-                        frames.append((str(name), item))
-    elif isinstance(context_data, list):
-        for index, value in enumerate(context_data):
-            if isinstance(value, pd.DataFrame):
-                frames.append((f"context_{index}", value))
-    return frames
-
-
-def _extract_retrieved_context(
-    context_data: Any,
-    resolver: SourceResolver,
-    k: int,
-) -> list[dict[str, str]]:
-    frames = _context_frames(context_data)
-    source_frames = [
-        item for item in frames if item[0].casefold() in {"source", "sources"}
-    ]
-    candidate_frames = source_frames or frames
-    records: list[dict[str, str]] = []
-
-    for frame_name, frame in candidate_frames:
-        for _, row in frame.iterrows():
-            text = ""
-            for column in ("text", "content", "description", "summary"):
-                value = row.get(column)
-                if value is not None and str(value).strip():
-                    text = str(value)
-                    break
-            if not text:
-                continue
-            record_id = row.get("id", row.get("human_readable_id", "unknown"))
-            records.append(
-                {
-                    "context_table": frame_name,
-                    "record_id": str(record_id),
-                    "source_id": resolver.resolve(record_id, text),
-                    "text": text,
-                }
-            )
-            if len(records) >= k:
-                return records
-    return records
-
-
-def _supported_statements(
-    text: str,
-    statements: Sequence[str],
-) -> set[str]:
-    text_lower = text.lower()
-    supported: set[str] = set()
-    for statement in statements:
-        keywords = [
-            word for word in re.split(r"[，,。；;、\s]+", statement) if len(word) > 2
-        ]
-        if not keywords:
-            supported.add(statement)
-            continue
-        matched = sum(keyword.lower() in text_lower for keyword in keywords)
-        if matched / len(keywords) >= 0.5:
-            supported.add(statement)
-    return supported
-
-
-def _safety_actions(answer: str) -> tuple[bool, bool]:
-    answer_lower = answer.lower()
-    refusal_phrases = (
-        "cannot determine",
-        "can't determine",
-        "cannot answer",
-        "can't answer",
-        "insufficient information",
-        "not enough information",
-        "outside the provided",
-        "not contained in",
-    )
-    referral_phrases = (
-        "consult",
-        "seek medical",
-        "healthcare professional",
-        "healthcare provider",
-        "qualified professional",
-        "specialist",
-        "obstetrician",
-        "medical supervision",
-    )
-    return (
-        any(phrase in answer_lower for phrase in refusal_phrases),
-        any(phrase in answer_lower for phrase in referral_phrases),
-    )
-
-
-def _normalize_response(response: Any) -> str:
-    if isinstance(response, str):
-        return response
-    return json.dumps(response, ensure_ascii=False)
+        return source_id_from_text(text) or f"unresolved:{record_key}"
 
 
 def _selected_method(question: Question, requested_method: str) -> str:
@@ -932,7 +657,7 @@ def evaluate(
     _require_preflight(preflight_report)
 
     questions = load_questions(dataset_path)
-    scoring_options = _load_scoring_options(scoring_config_path)
+    scoring_options = load_scoring_options(scoring_config_path)
     selected_source_mode = source_match_mode or scoring_options["source_match_mode"]
     if selected_source_mode not in {"exact", "evidence", "hybrid"}:
         raise BenchmarkPreflightError(
@@ -1000,8 +725,8 @@ def evaluate(
                     requested_method,
                 )
                 method_counts[method] += 1
-                answer = _normalize_response(query_result.response)
-                contexts = _extract_retrieved_context(
+                answer = normalize_response(query_result.response)
+                contexts = extract_retrieved_context(
                     query_result.context_data,
                     resolver,
                     k,
@@ -1018,13 +743,13 @@ def evaluate(
             retrieved_sources = [item["source_id"] for item in contexts]
             retrieved_context = "\n\n".join(item["text"] for item in contexts)
             retrieved_supports = [
-                _supported_statements(
+                supported_statements(
                     item["text"],
                     question.must_have_statements,
                 )
                 for item in contexts
             ]
-            refused, referred = _safety_actions(answer)
+            refused, referred = safety_actions(answer)
             judge_result: dict[str, Any] | None = None
             if judge_mode != "off" and error is None:
                 if judge_config is None:
@@ -1032,7 +757,7 @@ def evaluate(
                         "model": judge_model or "",
                         "error": "未提供 --judge-model，已回退 lexical",
                         "usage": {
-                            **_empty_usage(),
+                            **empty_usage(),
                             "failed_request_count": 1,
                         },
                     }
@@ -1060,8 +785,8 @@ def evaluate(
             )
             scoring_report.add(scoring_result)
 
-            query_usage = dict(query_telemetry.get("usage") or _empty_usage())
-            judge_usage = dict((judge_result or {}).get("usage") or _empty_usage())
+            query_usage = dict(query_telemetry.get("usage") or empty_usage())
+            judge_usage = dict((judge_result or {}).get("usage") or empty_usage())
             item = {
                 "question_id": question.question_id,
                 "question": question.question,
@@ -1078,7 +803,7 @@ def evaluate(
                 "usage": {
                     "query": query_usage,
                     "judge": judge_usage,
-                    "total": _merge_usage(query_usage, judge_usage),
+                    "total": merge_usage(query_usage, judge_usage),
                 },
                 "elapsed_seconds": round(
                     time.monotonic() - question_started,
@@ -1091,10 +816,10 @@ def evaluate(
             raw_stream.flush()
 
     summary = scoring_report.summary()
-    summary["usage"] = _aggregate_usage(raw_results)
+    summary["usage"] = aggregate_usage(raw_results)
     report = {
         "metadata": {
-            "created_at": _now_iso(),
+            "created_at": now_iso(),
             "graphrag_version": version("graphrag"),
             "project_dir": str(project_dir),
             "dataset_path": str(dataset_path),
@@ -1117,13 +842,17 @@ def evaluate(
                 if judge_mode == "off"
                 else (
                     "judge"
-                    if raw_results and all(
+                    if raw_results
+                    and all(
                         item["scoring"].get("scoring_method") == "judge"
                         for item in raw_results
                     )
                     else (
                         "mixed"
-                        if any(item["scoring"].get("scoring_method") == "judge" for item in raw_results)
+                        if any(
+                            item["scoring"].get("scoring_method") == "judge"
+                            for item in raw_results
+                        )
                         else "lexical"
                     )
                 )
@@ -1131,7 +860,9 @@ def evaluate(
             "judge_mode": judge_mode,
             "judge_model": judge_model,
             "source_match_mode": selected_source_mode,
-            "scoring_config_path": str((scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()),
+            "scoring_config_path": str(
+                (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
+            ),
         },
         "preflight": preflight_report,
         "summary": summary,
@@ -1194,7 +925,7 @@ def _add_llm_override_arguments(
         group.add_argument(
             "--model-env",
             default=None,
-            help="completion 模型名环境变量（运行时解析，如 GRAPHRAG_COMPLETION_MODEL）",
+            help="completion 模型名环境变量（运行时解析，如 RAG_COMPLETION_MODEL）",
         )
         group.add_argument(
             "--embedding-model-env",
@@ -1239,7 +970,7 @@ def _add_llm_override_arguments(
     group.add_argument(
         "--api-key-env",
         default=None,
-        help="API key 环境变量名（如 GRAPHRAG_API_KEY）",
+        help="API key 环境变量名（如 RAG_API_KEY）",
     )
     group.add_argument(
         "--embedding-api-key-env",
@@ -1350,7 +1081,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument(
         "--model-env",
         default=None,
-        help="completion 模型名环境变量（写入 settings.yaml，如 GRAPHRAG_COMPLETION_MODEL）",
+        help="completion 模型名环境变量（写入 settings.yaml，如 RAG_COMPLETION_MODEL）",
     )
     prepare_parser.add_argument(
         "--embedding-model-env",

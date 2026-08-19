@@ -8,85 +8,34 @@ GraphRAG baseline.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
-import threading
-from collections.abc import Iterable, Mapping
-from enum import Enum
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
+from benchmark.config import RAG_ENVIRONMENT, load_environment
+
+from .constants import DEFAULT_CHUNK_TOP_K, DEFAULT_RESPONSE_TYPE, DEFAULT_TOP_K
 from .dependency import ensure_light_rag_import_path
+from .documents import load_documents
+from .event_loop import EventLoopRunner
+from .index_methods import IndexMethod
+from .search_methods import SearchMethod, resolve_search_method
+from .states import ClientState
 
 ensure_light_rag_import_path()
 
-from dotenv import load_dotenv  # noqa: E402
 from lightrag import LightRAG, QueryParam  # noqa: E402
 from lightrag.utils import EmbeddingFunc  # noqa: E402
 
-from .enums import (  # noqa: E402
-    DEFAULT_CHUNK_TOP_K,
-    DEFAULT_RESPONSE_TYPE,
-    DEFAULT_TOP_K,
-    IndexMethod,
-    SearchMethod,
-)
 from .models import IndexResult, QueryResult  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-_VALID_MODES = {"global", "local", "hybrid", "mix", "naive"}
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-class _LoopRunner:
-    """Keep all operations for one LightRAG instance on one event loop."""
-
-    def __init__(self) -> None:
-        self.loop = asyncio.new_event_loop()
-        self._ready = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            name="light-rag-client-loop",
-            daemon=True,
-        )
-        self._thread.start()
-        self._ready.wait()
-
-    def _run_loop(self) -> None:
-        asyncio.set_event_loop(self.loop)
-        self._ready.set()
-        self.loop.run_forever()
-
-    def run(self, coro: Any) -> Any:
-        if threading.get_ident() == self._thread.ident:
-            raise RuntimeError(
-                "LightRAGClient synchronous methods cannot be called from its "
-                "internal event loop; await the underlying LightRAG API instead"
-            )
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result()
-
-    def close(self) -> None:
-        if self.loop.is_running():
-            async def _cancel_tasks() -> None:
-                current = asyncio.current_task()
-                pending = [
-                    task
-                    for task in asyncio.all_tasks(self.loop)
-                    if task is not current
-                ]
-                for task in pending:
-                    task.cancel()
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
-
-            asyncio.run_coroutine_threadsafe(_cancel_tasks(), self.loop).result(timeout=10)
-            self.loop.call_soon_threadsafe(self.loop.stop)
-        self._thread.join(timeout=10)
-        self.loop.close()
 
 
 def _override_value(override: Any, name: str) -> Any:
@@ -95,54 +44,6 @@ def _override_value(override: Any, name: str) -> Any:
     if isinstance(override, Mapping):
         return override.get(name)
     return getattr(override, name, None)
-
-
-def _load_documents(root_dir: Path, input_documents: Any) -> list[dict[str, str]]:
-    """Normalize DataFrame-like, mapping, and filesystem inputs."""
-
-    records: list[dict[str, str]] = []
-
-    if input_documents is not None:
-        rows: Iterable[Any]
-        if hasattr(input_documents, "iterrows"):
-            rows = (row.to_dict() for _, row in input_documents.iterrows())
-        else:
-            rows = input_documents if isinstance(input_documents, Iterable) else []
-        for index, row in enumerate(rows):
-            if isinstance(row, Mapping):
-                value = row
-            else:
-                value = {"text": str(row)}
-            text = value.get("text", value.get("content", value.get("document", "")))
-            text = str(text or "").strip()
-            if not text:
-                continue
-            title = str(value.get("title", value.get("file_path", value.get("path", ""))) or "")
-            document_id = str(value.get("id", value.get("document_id", "")) or "")
-            if not document_id:
-                document_id = Path(title).stem if title else f"document-{index + 1}"
-            file_path = title or document_id
-            records.append({"id": document_id, "text": text, "file_path": file_path})
-        return records
-
-    input_dir = root_dir / "input"
-    candidates = input_dir if input_dir.is_dir() else root_dir
-    paths = sorted(
-        path
-        for path in candidates.iterdir()
-        if path.is_file() and path.suffix.casefold() in {".txt", ".md"}
-    )
-    for path in paths:
-        text = path.read_text(encoding="utf-8").strip()
-        if text:
-            records.append(
-                {
-                    "id": path.stem,
-                    "text": text,
-                    "file_path": str(path.resolve()),
-                }
-            )
-    return records
 
 
 def _response_text(value: Any) -> str:
@@ -198,12 +99,11 @@ class LightRAGClient:
         self._enable_rerank = enable_rerank
         self._rag_options = dict(rag_options)
         self._rag: LightRAG | None = None
-        self._runner: _LoopRunner | None = None
+        self._runner: EventLoopRunner | None = None
         self._closed = False
+        self._state = ClientState.CREATED
 
-        env_file = self._root_dir / ".env"
-        if env_file.is_file():
-            load_dotenv(env_file, override=False)
+        load_environment()
         self._apply_overrides(llm_overrides)
 
     @staticmethod
@@ -244,7 +144,7 @@ class LightRAGClient:
             return
         completion = _override_value(overrides, "completion")
         embedding = _override_value(overrides, "embedding")
-        self._apply_model_environment(completion, role="llm")
+        self._apply_model_environment(completion, role="completion")
         self._apply_model_environment(embedding, role="embedding")
 
     @staticmethod
@@ -277,20 +177,14 @@ class LightRAGClient:
                 raise ValueError(f"invalid environment variable name: {api_key_env}")
             values["api_key"] = os.getenv(str(api_key_env), "")
 
-        if role == "llm":
-            env_names = {
-                "model": "LLM_MODEL",
-                "api_base": "LLM_BINDING_HOST",
-                "model_provider": "LLM_BINDING",
-                "api_key": "LLM_BINDING_API_KEY",
-            }
-        else:
-            env_names = {
-                "model": "EMBEDDING_MODEL",
-                "api_base": "EMBEDDING_BINDING_HOST",
-                "model_provider": "EMBEDDING_BINDING",
-                "api_key": "EMBEDDING_BINDING_API_KEY",
-            }
+        env_names = {
+            "model": RAG_ENVIRONMENT[
+                "completion_model" if role == "completion" else "embedding_model"
+            ],
+            "api_base": RAG_ENVIRONMENT["api_base"],
+            "model_provider": RAG_ENVIRONMENT["provider"],
+            "api_key": RAG_ENVIRONMENT["api_key"],
+        }
 
         for key, value in values.items():
             target = env_names.get(key)
@@ -298,9 +192,15 @@ class LightRAGClient:
                 os.environ[target] = value
 
     @staticmethod
-    async def _default_llm(prompt: str, system_prompt: str | None = None, history_messages: list[dict[str, str]] | None = None, **kwargs: Any) -> Any:
-        binding = os.getenv("LLM_BINDING", "openai").casefold()
-        model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    async def _default_llm(
+        prompt: str,
+        system_prompt: str | None = None,
+        history_messages: list[dict[str, str]] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        environment = load_environment()
+        binding = environment.provider
+        model = environment.completion_model
         if binding == "ollama":
             from lightrag.llm.ollama import ollama_model_complete
 
@@ -309,7 +209,7 @@ class LightRAGClient:
                 system_prompt=system_prompt,
                 history_messages=history_messages or [],
                 model=model,
-                host=os.getenv("LLM_BINDING_HOST") or "http://localhost:11434",
+                host=environment.api_base or "http://localhost:11434",
                 **kwargs,
             )
         from lightrag.llm.openai import openai_complete_if_cache
@@ -319,23 +219,24 @@ class LightRAGClient:
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages or [],
-            base_url=os.getenv("LLM_BINDING_HOST") or os.getenv("GRAPHRAG_API_BASE"),
-            api_key=os.getenv("LLM_BINDING_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GRAPHRAG_API_KEY"),
+            base_url=environment.api_base or None,
+            api_key=environment.api_key,
             **kwargs,
         )
 
     @staticmethod
     def _default_embedding() -> EmbeddingFunc:
-        binding = os.getenv("EMBEDDING_BINDING", os.getenv("LLM_BINDING", "openai")).casefold()
-        model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-        dimension = int(os.getenv("EMBEDDING_DIM", "1536"))
+        environment = load_environment()
+        binding = environment.provider
+        model = environment.embedding_model
+        dimension = environment.embedding_dimension
         if binding == "ollama":
             from lightrag.llm.ollama import ollama_embed
 
             func = partial(
                 ollama_embed.func,
                 embed_model=model,
-                host=os.getenv("EMBEDDING_BINDING_HOST") or "http://localhost:11434",
+                host=environment.api_base or "http://localhost:11434",
             )
         else:
             from lightrag.llm.openai import openai_embed
@@ -343,12 +244,12 @@ class LightRAGClient:
             func = partial(
                 openai_embed,
                 model=model,
-                base_url=os.getenv("EMBEDDING_BINDING_HOST") or os.getenv("GRAPHRAG_API_BASE"),
-                api_key=os.getenv("EMBEDDING_BINDING_API_KEY") or os.getenv("LLM_BINDING_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GRAPHRAG_API_KEY"),
+                base_url=environment.api_base or None,
+                api_key=environment.api_key,
             )
         return EmbeddingFunc(
             embedding_dim=dimension,
-            max_token_size=int(os.getenv("EMBEDDING_MAX_TOKEN_SIZE", "8192")),
+            max_token_size=environment.embedding_max_token_size,
             func=func,
         )
 
@@ -374,6 +275,7 @@ class LightRAGClient:
         if self._rag is None:
             self._rag = self._make_rag()
             await self._rag.initialize_storages()
+            self._state = ClientState.READY
         return self._rag
 
     def _ensure_rag(self) -> LightRAG:
@@ -381,7 +283,7 @@ class LightRAGClient:
 
     def _run(self, coro: Any) -> Any:
         if self._runner is None:
-            self._runner = _LoopRunner()
+            self._runner = EventLoopRunner()
         return self._runner.run(coro)
 
     def reload_config(self) -> dict[str, Any]:
@@ -390,7 +292,9 @@ class LightRAGClient:
         self._rag = None
         return self.config
 
-    async def _index_async(self, documents: list[dict[str, str]], cache: bool) -> IndexResult:
+    async def _index_async(
+        self, documents: list[dict[str, str]], cache: bool
+    ) -> IndexResult:
         rag = await self._ensure_rag_async()
         if not cache:
             await rag.aclear_cache()
@@ -398,9 +302,9 @@ class LightRAGClient:
             return IndexResult(outputs=[])
         try:
             track_id = await rag.ainsert(
-                [item["text"] for item in documents],
-                ids=[item["id"] for item in documents],
-                file_paths=[item["file_path"] for item in documents],
+                [item.text for item in documents],
+                ids=[item.document_id for item in documents],
+                file_paths=[item.file_path for item in documents],
             )
         except Exception as exc:  # noqa: BLE001
             return IndexResult(
@@ -410,7 +314,11 @@ class LightRAGClient:
             )
         return IndexResult(
             outputs=[
-                {"id": item["id"], "file_path": item["file_path"], "track_id": track_id}
+                {
+                    "id": item.document_id,
+                    "file_path": item.file_path,
+                    "track_id": track_id,
+                }
                 for item in documents
             ]
         )
@@ -437,21 +345,14 @@ class LightRAGClient:
             IndexMethod(method)
         except ValueError as exc:
             raise ValueError(f"unsupported index method: {method}") from exc
-        documents = _load_documents(self._root_dir, input_documents)
+        documents = load_documents(self._root_dir, input_documents)
         if dry_run:
             return IndexResult(outputs=documents)
         result = self._run(self._index_async(documents, cache))
         return result
 
     def _resolve_mode(self, method: str | SearchMethod) -> tuple[str, str]:
-        name = str(method.value if isinstance(method, Enum) else method).casefold()
-        if name == "basic":
-            return "naive", "basic"
-        if name == "drift":
-            return "hybrid", "drift"
-        if name not in _VALID_MODES:
-            raise ValueError(f"unsupported search method: {method}")
-        return name, name
+        return resolve_search_method(method)
 
     async def _query_async(
         self,
@@ -484,7 +385,9 @@ class LightRAGClient:
             payload = await rag.aquery_llm(query, param=param)
         payload = payload if isinstance(payload, dict) else {}
         llm_response = payload.get("llm_response", {})
-        response = llm_response.get("content") if isinstance(llm_response, dict) else None
+        response = (
+            llm_response.get("content") if isinstance(llm_response, dict) else None
+        )
         if isinstance(llm_response, dict) and llm_response.get("is_streaming"):
             iterator = llm_response.get("response_iterator")
             if iterator is not None:
@@ -493,7 +396,9 @@ class LightRAGClient:
                     chunks.append(_response_text(chunk))
                 response = "".join(chunks)
         if response is None and not query_data_only:
-            response = payload.get("message", "") if payload.get("status") == "failure" else ""
+            response = (
+                payload.get("message", "") if payload.get("status") == "failure" else ""
+            )
         data = payload.get("data", {})
         return QueryResult(
             response=_response_text(response),
@@ -569,7 +474,13 @@ class LightRAGClient:
         **kwargs: Any,
     ) -> QueryResult:
         del community_level, dynamic_community_selection
-        return self.search(query, SearchMethod.GLOBAL, response_type=response_type, streaming=streaming, **kwargs)
+        return self.search(
+            query,
+            SearchMethod.GLOBAL,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
     def local_search(
         self,
@@ -580,23 +491,90 @@ class LightRAGClient:
         **kwargs: Any,
     ) -> QueryResult:
         del community_level
-        return self.search(query, SearchMethod.LOCAL, response_type=response_type, streaming=streaming, **kwargs)
+        return self.search(
+            query,
+            SearchMethod.LOCAL,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
-    def hybrid_search(self, query: str, response_type: str = DEFAULT_RESPONSE_TYPE, streaming: bool = False, **kwargs: Any) -> QueryResult:
-        return self.search(query, SearchMethod.HYBRID, response_type=response_type, streaming=streaming, **kwargs)
+    def hybrid_search(
+        self,
+        query: str,
+        response_type: str = DEFAULT_RESPONSE_TYPE,
+        streaming: bool = False,
+        **kwargs: Any,
+    ) -> QueryResult:
+        return self.search(
+            query,
+            SearchMethod.HYBRID,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
-    def mix_search(self, query: str, response_type: str = DEFAULT_RESPONSE_TYPE, streaming: bool = False, **kwargs: Any) -> QueryResult:
-        return self.search(query, SearchMethod.MIX, response_type=response_type, streaming=streaming, **kwargs)
+    def mix_search(
+        self,
+        query: str,
+        response_type: str = DEFAULT_RESPONSE_TYPE,
+        streaming: bool = False,
+        **kwargs: Any,
+    ) -> QueryResult:
+        return self.search(
+            query,
+            SearchMethod.MIX,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
-    def basic_search(self, query: str, response_type: str = DEFAULT_RESPONSE_TYPE, streaming: bool = False, **kwargs: Any) -> QueryResult:
-        return self.search(query, SearchMethod.BASIC, response_type=response_type, streaming=streaming, **kwargs)
+    def basic_search(
+        self,
+        query: str,
+        response_type: str = DEFAULT_RESPONSE_TYPE,
+        streaming: bool = False,
+        **kwargs: Any,
+    ) -> QueryResult:
+        return self.search(
+            query,
+            SearchMethod.BASIC,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
-    def naive_search(self, query: str, response_type: str = DEFAULT_RESPONSE_TYPE, streaming: bool = False, **kwargs: Any) -> QueryResult:
-        return self.search(query, SearchMethod.NAIVE, response_type=response_type, streaming=streaming, **kwargs)
+    def naive_search(
+        self,
+        query: str,
+        response_type: str = DEFAULT_RESPONSE_TYPE,
+        streaming: bool = False,
+        **kwargs: Any,
+    ) -> QueryResult:
+        return self.search(
+            query,
+            SearchMethod.NAIVE,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
-    def drift_search(self, query: str, community_level: int = 2, response_type: str = DEFAULT_RESPONSE_TYPE, streaming: bool = False, **kwargs: Any) -> QueryResult:
+    def drift_search(
+        self,
+        query: str,
+        community_level: int = 2,
+        response_type: str = DEFAULT_RESPONSE_TYPE,
+        streaming: bool = False,
+        **kwargs: Any,
+    ) -> QueryResult:
         del community_level
-        return self.search(query, SearchMethod.DRIFT, response_type=response_type, streaming=streaming, **kwargs)
+        return self.search(
+            query,
+            SearchMethod.DRIFT,
+            response_type=response_type,
+            streaming=streaming,
+            **kwargs,
+        )
 
     async def _close_async(self) -> None:
         if self._rag is not None:
@@ -611,6 +589,7 @@ class LightRAGClient:
             self._runner.close()
             self._runner = None
         self._closed = True
+        self._state = ClientState.CLOSED
 
     def __enter__(self) -> "LightRAGClient":
         self._ensure_rag()
@@ -620,7 +599,4 @@ class LightRAGClient:
         self.close()
 
 
-# Backwards-compatible name used by a few benchmark scripts.
-GraphRAGClient = LightRAGClient
-
-__all__ = ["GraphRAGClient", "LightRAGClient"]
+__all__ = ["LightRAGClient"]

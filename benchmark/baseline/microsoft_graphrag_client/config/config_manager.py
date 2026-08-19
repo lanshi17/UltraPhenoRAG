@@ -68,7 +68,7 @@ class ConfigManager:
     def _load(self) -> GraphRagConfig:
         """从 root_dir 加载配置并合并输出目录及 LLM 覆盖。"""
         # LLM 覆盖中的 api_key_env 需要在生成运行时字典前读取项目 .env。
-        load_project_env(self.root_dir)
+        load_project_env()
         llm_overrides: Mapping[str, Any] | None = None
         if isinstance(self.llm_overrides, LLMConfigOverrides):
             llm_overrides = self.llm_overrides.to_runtime_overrides()

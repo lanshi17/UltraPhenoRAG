@@ -5,10 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 import sys
 import time
-import unicodedata
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict
@@ -17,15 +15,28 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Sequence
 
-import yaml
-
 from benchmark.baseline.light_rag_client import LightRAGClient
 from benchmark.baseline.light_rag_client.config.llm_config import (
-    DEFAULT_COMPLETION_MODEL,
-    DEFAULT_EMBEDDING_MODEL,
     LLMConfigOverrides,
     ModelConfigOverride,
 )
+from benchmark.common import (
+    MANIFEST_NAME,
+    aggregate_usage,
+    canonical_source_id,
+    empty_usage,
+    extract_retrieved_context,
+    load_scoring_options,
+    merge_usage,
+    normalize_response,
+    now_iso,
+    safe_slug,
+    safety_actions,
+    source_id_from_text,
+    supported_statements,
+    write_manifest,
+)
+from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
 from benchmark.qa import (
     DatasetScoringReport,
     JudgeConfig,
@@ -39,12 +50,10 @@ from benchmark.qa import (
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RAW_DIR = REPOSITORY_ROOT / "benchmark" / "data" / "raw"
 DEFAULT_PROJECT_DIR = REPOSITORY_ROOT / "benchmark" / "data" / "light_rag"
-DEFAULT_DATASET = REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "sample_questions.json"
-DEFAULT_RESULTS_DIR = REPOSITORY_ROOT / "benchmark" / "results" / "light_rag"
-MANIFEST_NAME = "corpus_manifest.json"
-DEFAULT_SCORING_CONFIG = (
-    REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "scoring_config.yaml"
+DEFAULT_DATASET = (
+    REPOSITORY_ROOT / "benchmark" / "qa" / "dataset" / "sample_questions.json"
 )
+DEFAULT_RESULTS_DIR = REPOSITORY_ROOT / "benchmark" / "results" / "light_rag"
 
 ADAPTIVE_SEARCH_METHODS = {
     "basic": "basic",
@@ -52,187 +61,35 @@ ADAPTIVE_SEARCH_METHODS = {
     "graph-enhanced": "drift",
 }
 
-CANONICAL_SOURCE_FILES = {
-    "ISUOG_2020_fetal-CNS-part1.pdf": "ISUOG-cns-2020",
-    "ISUOG_2022_routine-mid-trimester-scan.pdf": "ISUOG-midtrimester-2022",
-    "ISUOG_2023_11-14-week-ultrasound-scan.pdf": "ISUOG-11-14w-2023",
-    "ISUOG_2023_fetal-cardiac-screening.pdf": "ISUOG-fetal-cardiac-screening-2023",
-    "ISUOG-Practice-Guidelines-CNS-part-1-targeted-neurosonography.pdf": "ISUOG-cns-2020",
-    "ISUOG-Practice-Guidelines-Updated-performance-of-11-14-week-ultrasound-scan.pdf": "ISUOG-11-14w-2023",
-    "UOG-2023-Carvalho-ISUOG-Practice-Guidelines-updated-fetal-cardiac-screening.pdf": "ISUOG-fetal-cardiac-screening-2023",
-}
-
 
 class BenchmarkPreflightError(RuntimeError):
     """Local benchmark inputs are not ready."""
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+def prepare_corpus(
+    *,
+    raw_dir: Path | None = None,
+    project_dir: Path | None = None,
+    corpus_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Extract PDFs into the unified corpus directory.
 
+    The unified layout (``benchmark/data/corpus/input``) is shared with the
+    Microsoft GraphRAG baseline; LightRAG keeps only its own index storage
+    under ``project_dir``.
+    """
+    del project_dir  # input lives in the shared corpus dir now
+    from benchmark.common.unified_corpus import prepare_corpus as unified_prepare
 
-def _load_scoring_options(path: Path | None) -> dict[str, Any]:
-    """Read source-match policy and equivalence groups from scoring config."""
-    config_path = (path or DEFAULT_SCORING_CONFIG).resolve()
-    if not config_path.is_file():
-        return {"source_match_mode": "hybrid", "source_equivalence": {}}
-    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    retrieval = data.get("retrieval", {}) if isinstance(data, dict) else {}
-    mode = str(retrieval.get("source_match_mode", "hybrid"))
-    equivalence = retrieval.get("source_equivalence", {})
-    if not isinstance(equivalence, dict):
-        equivalence = {}
-    return {
-        "source_match_mode": mode,
-        "source_equivalence": {
-            str(key): [str(item) for item in values]
-            for key, values in equivalence.items()
-            if isinstance(values, (list, tuple, set))
-        },
-    }
-
-
-def _empty_usage() -> dict[str, Any]:
-    return {
-        "request_count": 0,
-        "failed_request_count": 0,
-        "prompt_tokens": None,
-        "completion_tokens": None,
-        "total_tokens": None,
-        "input_cost_usd": None,
-        "output_cost_usd": None,
-        "total_cost_usd": None,
-        "cost_available": False,
-        "models": [],
-        "by_model": {},
-    }
-
-
-def _merge_usage(*usages: dict[str, Any]) -> dict[str, Any]:
-    """Merge query/Judge usage; keep unknown tokens/cost as None, not fabricated 0."""
-    numeric_fields = (
-        "request_count",
-        "failed_request_count",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "input_cost_usd",
-        "output_cost_usd",
-        "total_cost_usd",
+    return unified_prepare(
+        raw_dir=raw_dir or UNIFIED_RAW_DIR,
+        corpus_dir=corpus_dir or DEFAULT_CORPUS_DIR,
     )
-    result = _empty_usage()
-    for field in numeric_fields:
-        values = [item.get(field) for item in usages if item.get(field) is not None]
-        if values:
-            result[field] = sum(float(value) for value in values)
-            if field.endswith("tokens"):
-                result[field] = int(result[field])
-    result["cost_available"] = bool(usages) and all(
-        item.get("cost_available") is True
-        for item in usages
-        if item.get("request_count", 0) or item.get("total_tokens") is not None
-    )
-    result["models"] = sorted(
-        {str(model) for item in usages for model in item.get("models", [])}
-    )
-    return result
 
 
-def _aggregate_usage(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate query/Judge usage, preserving visibility of missing cost data."""
-    result: dict[str, Any] = {
-        "recorded_query_count": 0,
-        "recorded_judge_count": 0,
-        "cost_missing_count": 0,
-        "query": _empty_usage(),
-        "judge": _empty_usage(),
-        "total": _empty_usage(),
-    }
-    for scope in ("query", "judge", "total"):
-        values = [
-            row.get("usage", {}).get(scope)
-            for row in rows
-            if isinstance(row.get("usage", {}).get(scope), dict)
-        ]
-        result[scope] = _merge_usage(*values) if values else _empty_usage()
-    result["recorded_query_count"] = sum(
-        isinstance(row.get("usage", {}).get("query"), dict) for row in rows
-    )
-    result["recorded_judge_count"] = sum(
-        isinstance(row.get("usage", {}).get("judge"), dict) for row in rows
-    )
-    result["cost_missing_count"] = sum(
-        isinstance(row.get("usage", {}).get("total"), dict)
-        and not row["usage"]["total"].get("cost_available", False)
-        for row in rows
-    )
-    return result
-
-
-def _safe_slug(value: str, max_length: int = 120) -> str:
-    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    value = re.sub(r"[^A-Za-z0-9._-]+", "-", ascii_value)
-    return re.sub(r"-{2,}", "-", value).strip("-._")[:max_length] or "document"
-
-
-def canonical_source_id(pdf_path: Path) -> str:
-    return CANONICAL_SOURCE_FILES.get(pdf_path.name, _safe_slug(pdf_path.stem))
-
-
-def _extract_pdf_text(pdf_path: Path) -> tuple[str, int, list[str]]:
-    from pypdf import PdfReader
-
-    reader = PdfReader(str(pdf_path), strict=False)
-    sections: list[str] = []
-    warnings: list[str] = []
-    for page_no, page in enumerate(reader.pages, 1):
-        try:
-            text = (page.extract_text() or "").replace("\x00", "").strip()
-        except Exception as exc:  # noqa: BLE001
-            warnings.append(f"page {page_no}: {type(exc).__name__}: {exc}")
-            continue
-        if text:
-            sections.append(f"## Page {page_no}\n\n{text}")
-    return "\n\n".join(sections), len(reader.pages), warnings
-
-
-def prepare_corpus(*, raw_dir: Path, project_dir: Path) -> dict[str, Any]:
-    raw_dir = raw_dir.resolve()
-    project_dir = project_dir.resolve()
-    input_dir = project_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-    documents: list[dict[str, Any]] = []
-    seen_hashes: dict[str, str] = {}
-    for pdf_path in sorted(raw_dir.glob("*.pdf")):
-        text, pages, warnings = _extract_pdf_text(pdf_path)
-        if not text:
-            documents.append({"source_id": canonical_source_id(pdf_path), "status": "error", "warnings": warnings or ["empty PDF text"], "input_file": None})
-            continue
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        source_id = canonical_source_id(pdf_path)
-        if digest in seen_hashes:
-            documents.append({"source_id": source_id, "status": "duplicate", "duplicate_of": seen_hashes[digest], "pages": pages, "input_file": None})
-            continue
-        seen_hashes[digest] = source_id
-        filename = f"{source_id}--{digest[:12]}.txt"
-        target = input_dir / filename
-        target.write_text(f"SOURCE_ID: {source_id}\n\n{text}\n", encoding="utf-8")
-        documents.append({"source_id": source_id, "status": "ok", "pages": pages, "input_file": str(target.relative_to(project_dir)), "warnings": warnings})
-    manifest = {
-        "created_at": _now_iso(),
-        "raw_dir": str(raw_dir),
-        "project_dir": str(project_dir),
-        "pdf_count": len(list(raw_dir.glob("*.pdf"))),
-        "indexed_document_count": sum(item.get("status") == "ok" for item in documents),
-        "duplicate_count": sum(item.get("status") == "duplicate" for item in documents),
-        "error_count": sum(item.get("status") == "error" for item in documents),
-        "documents": documents,
-    }
-    (project_dir / MANIFEST_NAME).write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    return manifest
-
-
-def preflight(*, project_dir: Path, dataset_path: Path, require_index: bool = False) -> dict[str, Any]:
+def preflight(
+    *, project_dir: Path, dataset_path: Path, require_index: bool = False
+) -> dict[str, Any]:
     project_dir = project_dir.resolve()
     dataset_path = dataset_path.resolve()
     issues: list[str] = []
@@ -250,24 +107,36 @@ def preflight(*, project_dir: Path, dataset_path: Path, require_index: bool = Fa
             for question_id, errors in dataset_errors.items()
             for error in errors
         )
-    input_files = sorted((project_dir / "input").glob("*.txt")) if (project_dir / "input").is_dir() else []
+    input_files = (
+        sorted((project_dir / "input").glob("*.txt"))
+        if (project_dir / "input").is_dir()
+        else []
+    )
     if not input_files:
-        issues.append(f"no LightRAG input text files found under {project_dir / 'input'}")
+        issues.append(
+            f"no LightRAG input text files found under {project_dir / 'input'}"
+        )
     storage_dir = project_dir / "rag_storage"
-    storage_markers = ("vdb_chunks.json", "kv_store_text_chunks.json", "graph_chunk_entity_relation.graphml")
-    storage_files = {
-        path.name
-        for path in storage_dir.rglob("*")
-        if path.is_file()
-    } if storage_dir.is_dir() else set()
-    missing_index = require_index and not any(marker in storage_files for marker in storage_markers)
+    storage_markers = (
+        "vdb_chunks.json",
+        "kv_store_text_chunks.json",
+        "graph_chunk_entity_relation.graphml",
+    )
+    storage_files = (
+        {path.name for path in storage_dir.rglob("*") if path.is_file()}
+        if storage_dir.is_dir()
+        else set()
+    )
+    missing_index = require_index and not any(
+        marker in storage_files for marker in storage_markers
+    )
     if missing_index:
         issues.append(f"LightRAG index is missing under {storage_dir}")
     manifest_path = project_dir / MANIFEST_NAME
     if not manifest_path.is_file():
         warnings.append(f"manifest is missing: {manifest_path}")
     return {
-        "checked_at": _now_iso(),
+        "checked_at": now_iso(),
         "project_dir": str(project_dir),
         "dataset_path": str(dataset_path),
         "input_document_count": len(input_files),
@@ -281,10 +150,19 @@ def preflight(*, project_dir: Path, dataset_path: Path, require_index: bool = Fa
 
 def _require_preflight(report: dict[str, Any]) -> None:
     if report["issues"]:
-        raise BenchmarkPreflightError("preflight failed:\n" + "\n".join(f"- {item}" for item in report["issues"]))
+        raise BenchmarkPreflightError(
+            "preflight failed:\n" + "\n".join(f"- {item}" for item in report["issues"])
+        )
 
 
-def build_index(*, project_dir: Path, dataset_path: Path, cache: bool = True, verbose: bool = False, llm_overrides: LLMConfigOverrides | None = None) -> dict[str, Any]:
+def build_index(
+    *,
+    project_dir: Path,
+    dataset_path: Path,
+    cache: bool = True,
+    verbose: bool = False,
+    llm_overrides: LLMConfigOverrides | None = None,
+) -> dict[str, Any]:
     report = preflight(project_dir=project_dir, dataset_path=dataset_path)
     _require_preflight(report)
     started = time.monotonic()
@@ -294,7 +172,7 @@ def build_index(*, project_dir: Path, dataset_path: Path, cache: bool = True, ve
         if result.has_errors:
             raise RuntimeError("LightRAG indexing failed:\n" + "\n".join(result.errors))
         return {
-            "completed_at": _now_iso(),
+            "completed_at": now_iso(),
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "document_count": len(result.outputs),
             "errors": result.errors,
@@ -330,7 +208,9 @@ class SourceResolver:
             path = Path(input_file)
             self._sources[path.name] = source_id
             self._sources[path.stem] = source_id
-        if hasattr(manifest_or_documents, "iterrows") and hasattr(text_units, "iterrows"):
+        if hasattr(manifest_or_documents, "iterrows") and hasattr(
+            text_units, "iterrows"
+        ):
             document_sources: dict[str, str] = {}
             for _, row in manifest_or_documents.iterrows():
                 title = str(row.get("title", ""))
@@ -367,64 +247,8 @@ class SourceResolver:
         for key in (path.name, path.stem, str(file_path or "")):
             if key in self._sources:
                 return self._sources[key]
-        match = re.search(r"(?m)^SOURCE_ID:\s*(\S+)\s*$", text)
-        return match.group(1) if match else f"unresolved:{path.name or 'unknown'}"
-
-
-def _context_frames(context_data: Any) -> list[tuple[str, list[Any]]]:
-    """Normalize LightRAG lists and pandas DataFrames into named rows."""
-
-    if hasattr(context_data, "iterrows"):
-        return [("sources", [row.to_dict() for _, row in context_data.iterrows()])]
-    if isinstance(context_data, Mapping):
-        data = context_data.get("data", context_data)
-        if not isinstance(data, Mapping):
-            return []
-        frames: list[tuple[str, list[Any]]] = []
-        for name, value in data.items():
-            if hasattr(value, "iterrows"):
-                frames.append((str(name), [row.to_dict() for _, row in value.iterrows()]))
-            elif isinstance(value, list):
-                frames.append((str(name), value))
-        return frames
-    if isinstance(context_data, list):
-        return [("sources", context_data)]
-    return []
-
-
-def _extract_retrieved_context(context_data: Any, resolver: SourceResolver, k: int) -> list[dict[str, str]]:
-    records: list[dict[str, str]] = []
-    frames = _context_frames(context_data)
-    priority = {"chunks": 0, "sources": 1, "text_units": 2, "entities": 3, "relationships": 4}
-    for table, values in sorted(frames, key=lambda item: priority.get(item[0].casefold(), 9)):
-        for index, item in enumerate(values):
-            if not isinstance(item, Mapping):
-                continue
-            text = str(item.get("content", item.get("text", item.get("description", ""))) or "").strip()
-            if not text:
-                continue
-            file_path = item.get("file_path", item.get("source_id", ""))
-            records.append({"context_table": table, "record_id": str(item.get("chunk_id", item.get("reference_id", item.get("id", index)))), "source_id": resolver.resolve(file_path, text), "text": text})
-            if len(records) >= k:
-                return records
-    return records
-
-
-def _supported_statements(text: str, statements: Sequence[str]) -> set[str]:
-    lowered = text.casefold()
-    supported: set[str] = set()
-    for statement in statements:
-        words = [word for word in re.split(r"[,，。；;、\s]+", statement) if len(word) > 2]
-        if words and sum(word.casefold() in lowered for word in words) / len(words) >= 0.5:
-            supported.add(statement)
-    return supported
-
-
-def _safety_actions(answer: str) -> tuple[bool, bool]:
-    answer = answer.casefold()
-    refused = any(item in answer for item in ("cannot determine", "insufficient information", "not enough information", "cannot answer"))
-    referred = any(item in answer for item in ("consult", "specialist", "healthcare professional", "obstetrician", "medical supervision"))
-    return refused, referred
+        source = source_id_from_text(text)
+        return source or f"unresolved:{path.name or 'unknown'}"
 
 
 def _selected_method(question: Any, requested_method: str) -> str:
@@ -433,11 +257,9 @@ def _selected_method(question: Any, requested_method: str) -> str:
     try:
         return ADAPTIVE_SEARCH_METHODS[question.rag_arch_type]
     except KeyError as exc:
-        raise ValueError(f"unsupported rag_arch_type: {question.rag_arch_type}") from exc
-
-
-def _normalize_response(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        raise ValueError(
+            f"unsupported rag_arch_type: {question.rag_arch_type}"
+        ) from exc
 
 
 def evaluate(
@@ -460,10 +282,12 @@ def evaluate(
     judge_api_base: str | None = None,
 ) -> dict[str, Any]:
     """Query the dataset, compute three-layer metrics, and save auditable results."""
-    report = preflight(project_dir=project_dir, dataset_path=dataset_path, require_index=True)
+    report = preflight(
+        project_dir=project_dir, dataset_path=dataset_path, require_index=True
+    )
     _require_preflight(report)
     questions = load_questions(dataset_path)
-    scoring_options = _load_scoring_options(scoring_config_path)
+    scoring_options = load_scoring_options(scoring_config_path)
     selected_source_mode = source_match_mode or scoring_options["source_match_mode"]
     if selected_source_mode not in {"exact", "evidence", "hybrid"}:
         raise BenchmarkPreflightError(
@@ -482,16 +306,24 @@ def evaluate(
     )
     if question_ids:
         selected = set(question_ids)
-        questions = [question for question in questions if question.question_id in selected]
+        questions = [
+            question for question in questions if question.question_id in selected
+        ]
         missing = selected - {question.question_id for question in questions}
         if missing:
-            raise BenchmarkPreflightError("unknown question IDs: " + ", ".join(sorted(missing)))
+            raise BenchmarkPreflightError(
+                "unknown question IDs: " + ", ".join(sorted(missing))
+            )
     if limit is not None:
         questions = questions[:limit]
     if not questions:
         raise BenchmarkPreflightError("no questions selected")
     project_dir = project_dir.resolve()
-    output_path = (output_path or DEFAULT_RESULTS_DIR / f"evaluation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json").resolve()
+    output_path = (
+        output_path
+        or DEFAULT_RESULTS_DIR
+        / f"evaluation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.json"
+    ).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path = output_path.with_suffix(".jsonl")
     manifest_path = project_dir / MANIFEST_NAME
@@ -501,7 +333,7 @@ def evaluate(
         manifest = {
             "documents": [
                 {
-                    "source_id": _safe_slug(path.stem.split("--", 1)[0]),
+                    "source_id": safe_slug(path.stem.split("--", 1)[0]),
                     "input_file": str(path.relative_to(project_dir)),
                 }
                 for path in sorted((project_dir / "input").glob("*.txt"))
@@ -523,8 +355,10 @@ def evaluate(
                 try:
                     query_result = client.search(question.question, selected_method)
                     method_counts[selected_method] += 1
-                    answer = _normalize_response(query_result.response)
-                    contexts = _extract_retrieved_context(query_result.context_data, resolver, k)
+                    answer = normalize_response(query_result.response)
+                    contexts = extract_retrieved_context(
+                        query_result.context_data, resolver, k
+                    )
                 except Exception as exc:  # noqa: BLE001
                     if fail_fast:
                         raise
@@ -533,8 +367,11 @@ def evaluate(
                     method_counts[selected_method] += 1
                 retrieved_sources = [item["source_id"] for item in contexts]
                 retrieved_context = "\n\n".join(item["text"] for item in contexts)
-                retrieved_supports = [_supported_statements(item["text"], question.must_have_statements) for item in contexts]
-                refused, referred = _safety_actions(answer)
+                retrieved_supports = [
+                    supported_statements(item["text"], question.must_have_statements)
+                    for item in contexts
+                ]
+                refused, referred = safety_actions(answer)
                 judge_result: dict[str, Any] | None = None
                 if judge_mode != "off" and error is None:
                     if judge_config is None:
@@ -542,7 +379,7 @@ def evaluate(
                             "model": judge_model or "",
                             "error": "no --judge-model provided, fell back to lexical",
                             "usage": {
-                                **_empty_usage(),
+                                **empty_usage(),
                                 "failed_request_count": 1,
                             },
                         }
@@ -569,8 +406,11 @@ def evaluate(
                     judge_result=judge_result,
                 )
                 scoring.add(result)
-                query_usage = dict((getattr(query_result, "telemetry", None) or {}).get("usage") or _empty_usage())
-                judge_usage = dict((judge_result or {}).get("usage") or _empty_usage())
+                query_usage = dict(
+                    (getattr(query_result, "telemetry", None) or {}).get("usage")
+                    or empty_usage()
+                )
+                judge_usage = dict((judge_result or {}).get("usage") or empty_usage())
                 item = {
                     "question_id": question.question_id,
                     "question": question.question,
@@ -587,7 +427,7 @@ def evaluate(
                     "usage": {
                         "query": query_usage,
                         "judge": judge_usage,
-                        "total": _merge_usage(query_usage, judge_usage),
+                        "total": merge_usage(query_usage, judge_usage),
                     },
                     "elapsed_seconds": round(time.monotonic() - question_started, 3),
                     "scoring": asdict(result),
@@ -598,10 +438,10 @@ def evaluate(
     finally:
         client.close()
     summary = scoring.summary()
-    summary["usage"] = _aggregate_usage(raw_results)
+    summary["usage"] = aggregate_usage(raw_results)
     result = {
         "metadata": {
-            "created_at": _now_iso(),
+            "created_at": now_iso(),
             "lightrag_version": _lightrag_version(),
             "project_dir": str(project_dir),
             "dataset_path": str(dataset_path.resolve()),
@@ -626,13 +466,17 @@ def evaluate(
                 if judge_mode == "off"
                 else (
                     "judge"
-                    if raw_results and all(
+                    if raw_results
+                    and all(
                         item["scoring"].get("scoring_method") == "judge"
                         for item in raw_results
                     )
                     else (
                         "mixed"
-                        if any(item["scoring"].get("scoring_method") == "judge" for item in raw_results)
+                        if any(
+                            item["scoring"].get("scoring_method") == "judge"
+                            for item in raw_results
+                        )
                         else "lexical"
                     )
                 )
@@ -640,13 +484,17 @@ def evaluate(
             "judge_mode": judge_mode,
             "judge_model": judge_model,
             "source_match_mode": selected_source_mode,
-            "scoring_config_path": str((scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()),
+            "scoring_config_path": str(
+                (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
+            ),
         },
         "preflight": report,
         "summary": summary,
         "results": raw_results,
     }
-    output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return result
 
 
@@ -700,7 +548,7 @@ def _add_llm_override_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--api-key-env",
         default=None,
-        help="API key environment variable name (e.g. GRAPHRAG_API_KEY)",
+        help="API key environment variable name (e.g. RAG_API_KEY)",
     )
     group.add_argument(
         "--embedding-api-key-env",
@@ -756,13 +604,17 @@ def _llm_overrides_from_args(args: argparse.Namespace) -> LLMConfigOverrides | N
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build and evaluate the LightRAG prenatal benchmark")
+    parser = argparse.ArgumentParser(
+        description="Build and evaluate the LightRAG prenatal benchmark"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     prepare = sub.add_parser("prepare")
     prepare.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     prepare.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     preflight_parser = sub.add_parser("preflight")
-    preflight_parser.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
+    preflight_parser.add_argument(
+        "--project-dir", type=Path, default=DEFAULT_PROJECT_DIR
+    )
     preflight_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     preflight_parser.add_argument("--require-index", action="store_true")
     index = sub.add_parser("index")
@@ -772,9 +624,24 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("--verbose", action="store_true")
     _add_llm_override_arguments(index)
     evaluate_parser = sub.add_parser("evaluate")
-    evaluate_parser.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
+    evaluate_parser.add_argument(
+        "--project-dir", type=Path, default=DEFAULT_PROJECT_DIR
+    )
     evaluate_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    evaluate_parser.add_argument("--method", choices=("adaptive", "basic", "naive", "local", "global", "hybrid", "mix", "drift"), default="adaptive")
+    evaluate_parser.add_argument(
+        "--method",
+        choices=(
+            "adaptive",
+            "basic",
+            "naive",
+            "local",
+            "global",
+            "hybrid",
+            "mix",
+            "drift",
+        ),
+        default="adaptive",
+    )
     evaluate_parser.add_argument("--k", type=int, default=16)
     evaluate_parser.add_argument("--output", type=Path)
     evaluate_parser.add_argument("--limit", type=int)
@@ -802,7 +669,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
     run.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     run.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    run.add_argument("--method", choices=("adaptive", "basic", "naive", "local", "global", "hybrid", "mix", "drift"), default="adaptive")
+    run.add_argument(
+        "--method",
+        choices=(
+            "adaptive",
+            "basic",
+            "naive",
+            "local",
+            "global",
+            "hybrid",
+            "mix",
+            "drift",
+        ),
+        default="adaptive",
+    )
     run.add_argument("--k", type=int, default=16)
     run.add_argument("--output", type=Path)
     run.add_argument("--limit", type=int)
@@ -833,12 +713,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "prepare":
             result = prepare_corpus(raw_dir=args.raw_dir, project_dir=args.project_dir)
         elif args.command == "preflight":
-            result = preflight(project_dir=args.project_dir, dataset_path=args.dataset, require_index=args.require_index)
+            result = preflight(
+                project_dir=args.project_dir,
+                dataset_path=args.dataset,
+                require_index=args.require_index,
+            )
         elif args.command == "index":
-            result = build_index(project_dir=args.project_dir, dataset_path=args.dataset, cache=not args.no_cache, verbose=args.verbose, llm_overrides=llm_overrides)
+            result = build_index(
+                project_dir=args.project_dir,
+                dataset_path=args.dataset,
+                cache=not args.no_cache,
+                verbose=args.verbose,
+                llm_overrides=llm_overrides,
+            )
         elif args.command == "run":
             prepare_corpus(raw_dir=args.raw_dir, project_dir=args.project_dir)
-            index_result = build_index(project_dir=args.project_dir, dataset_path=args.dataset, cache=not args.no_cache, verbose=args.verbose, llm_overrides=llm_overrides)
+            index_result = build_index(
+                project_dir=args.project_dir,
+                dataset_path=args.dataset,
+                cache=not args.no_cache,
+                verbose=args.verbose,
+                llm_overrides=llm_overrides,
+            )
             evaluation = evaluate(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
@@ -855,7 +751,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 judge_api_key_env=args.judge_api_key_env,
                 judge_api_base=args.judge_api_base,
             )
-            result = {"index": index_result, "output_path": evaluation["metadata"]["output_path"], "summary": evaluation["summary"]}
+            result = {
+                "index": index_result,
+                "output_path": evaluation["metadata"]["output_path"],
+                "summary": evaluation["summary"],
+            }
         else:
             evaluation = evaluate(
                 project_dir=args.project_dir,
@@ -875,7 +775,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 judge_api_key_env=args.judge_api_key_env,
                 judge_api_base=args.judge_api_base,
             )
-            result = {"output_path": evaluation["metadata"]["output_path"], "summary": evaluation["summary"]}
+            result = {
+                "output_path": evaluation["metadata"]["output_path"],
+                "summary": evaluation["summary"],
+            }
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except BenchmarkPreflightError as exc:
