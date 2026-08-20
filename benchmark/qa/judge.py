@@ -13,17 +13,68 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from benchmark.config import load_environment
+
+# Judge 专用环境变量；未配置时回退到 OpenAI-style 变量。
+JUDGE_ENVIRONMENT = {
+    "api_key": "JUDGE_API_KEY",
+    "api_key_fallback": "OPENAI_API_KEY",
+    "api_base": "JUDGE_API_BASE",
+    "api_base_fallback": "OPENAI_API_BASE",
+    "completion_model": "JUDGE_COMPLETION_MODEL",
+}
+DEFAULT_JUDGE_MODEL = "gpt-5"
+
 
 @dataclass(frozen=True)
 class JudgeConfig:
-    """Judge 运行参数。"""
+    """Judge 运行参数。
 
-    model: str
-    api_key_env: str = "OPENAI_API_KEY"
+    ``api_key_env`` / ``api_base`` / ``model`` 缺省时按以下优先级解析：
+
+    1. 显式参数（CLI ``--judge-model`` / ``--judge-api-key-env`` / ``--judge-api-base``）
+    2. ``benchmark/.env`` 中的 ``JUDGE_COMPLETION_MODEL`` / ``JUDGE_API_KEY`` /
+       ``JUDGE_API_BASE``
+    3. key/base 回退到 ``OPENAI_API_KEY`` / ``OPENAI_API_BASE``；model 回退到默认值
+    """
+
+    model: str | None = None
+    api_key_env: str | None = None
     api_base: str | None = None
     max_context_chars: int = 12000
     max_answer_chars: int = 8000
     max_gold_chars: int = 8000
+
+    def resolve_model(self) -> str:
+        """解析 Judge 模型名：显式参数 > ``JUDGE_COMPLETION_MODEL`` > 默认值。"""
+        if self.model:
+            return self.model
+        value = os.getenv(JUDGE_ENVIRONMENT["completion_model"], "").strip()
+        return value or DEFAULT_JUDGE_MODEL
+
+    def resolve_api_key_env(self) -> str:
+        """解析存放 API key 的环境变量名。"""
+        if self.api_key_env:
+            return self.api_key_env
+        if os.getenv(JUDGE_ENVIRONMENT["api_key"], "").strip():
+            return JUDGE_ENVIRONMENT["api_key"]
+        return JUDGE_ENVIRONMENT["api_key_fallback"]
+
+    def resolve_api_base(self) -> str | None:
+        """解析 OpenAI-compatible base URL（不含 key）。"""
+        if self.api_base:
+            return self.api_base
+        value = os.getenv(JUDGE_ENVIRONMENT["api_base"], "").strip()
+        if value:
+            return value
+        fallback = os.getenv(JUDGE_ENVIRONMENT["api_base_fallback"], "").strip()
+        return fallback or None
+
+
+def judge_model_from_env() -> str | None:
+    """读取 ``JUDGE_COMPLETION_MODEL``（先加载 ``benchmark/.env``），未配置返回 None。"""
+    load_environment()
+    return os.getenv(JUDGE_ENVIRONMENT["completion_model"], "").strip() or None
 
 
 def _clip(value: str, limit: int) -> str:
@@ -49,7 +100,9 @@ def _usage_from_response(response: Any, model: str) -> dict[str, Any]:
         "by_model": {},
     }
     hidden = getattr(response, "_hidden_params", {}) or {}
-    response_cost = hidden.get("response_cost") or getattr(response, "response_cost", None)
+    response_cost = hidden.get("response_cost") or getattr(
+        response, "response_cost", None
+    )
     if response_cost is not None:
         try:
             result["total_cost_usd"] = float(response_cost)
@@ -92,18 +145,25 @@ def judge_answer(
     must_have_statements: list[str],
     config: JudgeConfig,
 ) -> dict[str, Any]:
-    """调用 Judge，返回评分、理由及请求 usage。"""
+    """调用 Judge，返回评分、理由及请求 usage。
+
+    先加载 ``benchmark/.env`` 再解析 key/base/model，保证 CLI 无显式参数时
+    也能拿到 ``JUDGE_*`` 配置。
+    """
     started = time.monotonic()
-    api_key = os.getenv(config.api_key_env, "").strip()
+    load_environment()
+    model = config.resolve_model()
+    api_key_env = config.resolve_api_key_env()
+    api_key = os.getenv(api_key_env, "").strip()
     if not api_key:
         return {
-            "model": config.model,
-            "error": f"环境变量 {config.api_key_env} 未配置 Judge API key",
+            "model": model,
+            "error": f"环境变量 {api_key_env} 未配置 Judge API key",
             "usage": {
                 "request_count": 0,
                 "failed_request_count": 1,
                 "cost_available": False,
-                "models": [config.model],
+                "models": [model],
             },
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
@@ -127,8 +187,9 @@ def judge_answer(
     try:
         import litellm
 
+        api_base = config.resolve_api_base()
         kwargs: dict[str, Any] = {
-            "model": config.model,
+            "model": model,
             "api_key": api_key,
             "messages": [
                 {"role": "system", "content": system},
@@ -137,8 +198,8 @@ def judge_answer(
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
-        if config.api_base:
-            kwargs["api_base"] = config.api_base
+        if api_base:
+            kwargs["api_base"] = api_base
         response = litellm.completion(**kwargs)
         payload = _extract_content(response)
         scores = payload.get("scores", payload)
@@ -153,20 +214,20 @@ def judge_answer(
         return {
             "scores": {name: float(scores[name]) for name in required},
             "rationale": str(payload.get("rationale", "")),
-            "model": config.model,
+            "model": model,
             "error": None,
-            "usage": _usage_from_response(response, config.model),
+            "usage": _usage_from_response(response, model),
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }
     except Exception as exc:  # noqa: BLE001
         return {
-            "model": config.model,
+            "model": model,
             "error": f"{type(exc).__name__}: {exc}",
             "usage": {
                 "request_count": 1,
                 "failed_request_count": 1,
                 "cost_available": False,
-                "models": [config.model],
+                "models": [model],
             },
             "elapsed_seconds": round(time.monotonic() - started, 3),
         }

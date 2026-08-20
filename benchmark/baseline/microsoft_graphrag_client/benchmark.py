@@ -23,24 +23,27 @@ from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
     ModelConfigOverride,
 )
 from benchmark.common import (
-    MANIFEST_NAME,
     aggregate_usage,
-    canonical_source_id,
     empty_usage,
-    extract_pdf_text,
     extract_retrieved_context,
     load_scoring_options,
     merge_usage,
     normalize_response,
     now_iso,
-    safe_slug,
     safety_actions,
-    sha256_file,
     source_id_from_text,
     supported_statements,
-    write_manifest,
 )
 from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
+from benchmark.common.unified_corpus import (
+    DEFAULT_CORPUS_DIR,
+    corpus_input_dir,
+    corpus_manifest_path,
+    load_corpus_manifest,
+)
+from benchmark.common.unified_corpus import (
+    prepare_corpus as unified_prepare_corpus,
+)
 from benchmark.qa import (
     DatasetScoringReport,
     EntityType,
@@ -48,6 +51,7 @@ from benchmark.qa import (
     Question,
     compute_dataset_fingerprint,
     judge_answer,
+    judge_model_from_env,
     load_questions,
     score_question,
     validate_dataset,
@@ -120,6 +124,7 @@ def _configure_project(
     model: str,
     embedding_model: str,
     top_k: int,
+    corpus_dir: Path | None = None,
     model_env: str | None = None,
     api_key_env: str | None = None,
     api_base_env: str | None = None,
@@ -143,6 +148,9 @@ def _configure_project(
     settings.setdefault("input", {})["type"] = "text"
     # GraphRAG 使用 string.Template 展开环境变量，正则末尾的 $ 需写成 $$。
     settings["input"]["file_pattern"] = r".*\.txt$$"
+    # 统一语料：input_storage 指向共享 corpus/input（绝对路径）。
+    unified_input = corpus_input_dir(corpus_dir)
+    settings.setdefault("input_storage", {})["base_dir"] = str(unified_input)
     settings.setdefault("extract_graph", {})["entity_types"] = [
         entity_type.value for entity_type in EntityType
     ]
@@ -205,6 +213,7 @@ def prepare_corpus(
     model: str,
     embedding_model: str,
     top_k: int,
+    corpus_dir: Path | None = None,
     model_env: str | None = None,
     api_key_env: str | None = None,
     api_base_env: str | None = None,
@@ -212,31 +221,26 @@ def prepare_corpus(
     embedding_api_key_env: str | None = None,
     embedding_api_base_env: str | None = None,
 ) -> dict[str, Any]:
-    """提取 PDF 文本、初始化 GraphRAG 项目并生成来源清单。"""
+    """提取 PDF 到统一语料目录，并初始化 GraphRAG 项目（input 指向共享 corpus）。"""
     raw_dir = raw_dir.resolve()
     project_dir = project_dir.resolve()
     dataset_path = dataset_path.resolve()
+    corpus_dir = (corpus_dir or DEFAULT_CORPUS_DIR).resolve()
 
-    if not raw_dir.is_dir():
-        raise BenchmarkPreflightError(f"原始语料目录不存在: {raw_dir}")
-
-    pdf_paths = sorted(
-        (
-            path
-            for path in raw_dir.iterdir()
-            if path.is_file() and path.suffix.casefold() == ".pdf"
-        ),
-        key=lambda path: path.name.casefold(),
+    # 统一语料提取（与其他基线共享同一份 input/ 与 corpus_manifest.json）
+    manifest = unified_prepare_corpus(
+        raw_dir=raw_dir,
+        corpus_dir=corpus_dir,
+        dataset_path=dataset_path,
     )
-    if not pdf_paths:
-        raise BenchmarkPreflightError(f"原始语料目录中没有 PDF: {raw_dir}")
 
     project_dir.parent.mkdir(parents=True, exist_ok=True)
-    project_created = _configure_project(
+    _configure_project(
         project_dir,
         model=model,
         embedding_model=embedding_model,
         top_k=top_k,
+        corpus_dir=corpus_dir,
         model_env=model_env,
         api_key_env=api_key_env,
         api_base_env=api_base_env,
@@ -244,103 +248,9 @@ def prepare_corpus(
         embedding_api_key_env=embedding_api_key_env,
         embedding_api_base_env=embedding_api_base_env,
     )
-    input_dir = project_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
 
-    documents: list[dict[str, Any]] = []
-    extracted_documents: dict[tuple[str, str], dict[str, Any]] = {}
-    for index, pdf_path in enumerate(pdf_paths, start=1):
-        pdf_hash = sha256_file(pdf_path)
-        source_id = canonical_source_id(pdf_path)
-        output_name = f"{safe_slug(source_id)}--{pdf_hash[:12]}.txt"
-        output_path = input_dir / output_name
-
-        duplicate = extracted_documents.get((source_id, pdf_hash))
-        if duplicate is not None:
-            print(
-                f"[{index}/{len(pdf_paths)}] 跳过重复文件 {pdf_path.name}",
-                flush=True,
-            )
-            documents.append(
-                {
-                    "source_id": source_id,
-                    "pdf_file": pdf_path.name,
-                    "pdf_sha256": pdf_hash,
-                    "input_file": duplicate["input_file"],
-                    "page_count": duplicate["page_count"],
-                    "text_characters": duplicate["text_characters"],
-                    "status": "duplicate",
-                    "duplicate_of": duplicate["pdf_file"],
-                    "warnings": [],
-                }
-            )
-            continue
-
-        print(f"[{index}/{len(pdf_paths)}] 提取 {pdf_path.name}", flush=True)
-
-        try:
-            body, page_count, page_warnings = extract_pdf_text(pdf_path)
-            if not body.strip():
-                raise ValueError("未提取到可索引文本")
-
-            header = "\n".join(
-                [
-                    f"SOURCE_ID: {source_id}",
-                    f"ORIGINAL_FILE: {pdf_path.name}",
-                    f"PDF_SHA256: {pdf_hash}",
-                ]
-            )
-            output_path.write_text(f"{header}\n\n{body}\n", encoding="utf-8")
-            status = "partial" if page_warnings else "ok"
-            document = {
-                "source_id": source_id,
-                "pdf_file": pdf_path.name,
-                "pdf_sha256": pdf_hash,
-                "input_file": str(output_path.relative_to(project_dir)),
-                "page_count": page_count,
-                "text_characters": len(body),
-                "status": status,
-                "warnings": page_warnings,
-            }
-            documents.append(document)
-            extracted_documents[(source_id, pdf_hash)] = document
-        except Exception as exc:  # noqa: BLE001
-            documents.append(
-                {
-                    "source_id": source_id,
-                    "pdf_file": pdf_path.name,
-                    "pdf_sha256": pdf_hash,
-                    "input_file": None,
-                    "page_count": 0,
-                    "text_characters": 0,
-                    "status": "error",
-                    "warnings": [f"{type(exc).__name__}: {exc}"],
-                }
-            )
-
-    questions = load_questions(dataset_path)
-    successful_source_ids = {
-        item["source_id"] for item in documents if item["status"] in {"ok", "partial"}
-    }
-    manifest = {
-        "created_at": now_iso(),
-        "raw_dir": str(raw_dir),
-        "project_dir": str(project_dir),
-        "project_created": project_created,
-        "pdf_count": len(pdf_paths),
-        "indexed_document_count": sum(
-            item["status"] in {"ok", "partial"} for item in documents
-        ),
-        "duplicate_count": sum(item["status"] == "duplicate" for item in documents),
-        "error_count": sum(item["status"] == "error" for item in documents),
-        "partial_count": sum(item["status"] == "partial" for item in documents),
-        "documents": documents,
-        "dataset_source_coverage": _source_coverage(
-            questions,
-            successful_source_ids,
-        ),
-    }
-    write_manifest(project_dir, manifest)
+    manifest["project_dir"] = str(project_dir)
+    manifest["corpus_dir"] = str(corpus_dir)
     return manifest
 
 
@@ -365,6 +275,7 @@ def preflight(
     project_dir: Path,
     dataset_path: Path,
     require_index: bool = False,
+    corpus_dir: Path | None = None,
 ) -> dict[str, Any]:
     """在任何远程模型调用前检查本地输入、凭据和索引产物。"""
     from graphrag.config.load_config import load_config
@@ -375,15 +286,15 @@ def preflight(
     warnings: list[str] = []
 
     settings_path = project_dir / "settings.yaml"
-    manifest_path = project_dir / MANIFEST_NAME
-    input_dir = project_dir / "input"
+    unified_input = corpus_input_dir(corpus_dir)
+    manifest_path = corpus_manifest_path(corpus_dir)
 
     if not settings_path.is_file():
         issues.append(f"缺少 GraphRAG 配置: {settings_path}")
 
-    input_files = sorted(input_dir.glob("*.txt")) if input_dir.is_dir() else []
+    input_files = sorted(unified_input.glob("*.txt"))
     if not input_files:
-        issues.append(f"没有待索引文本: {input_dir}")
+        issues.append(f"统一语料目录中没有待索引文本: {unified_input}")
 
     manifest: dict[str, Any] = {}
     if manifest_path.is_file():
@@ -447,6 +358,7 @@ def preflight(
         "checked_at": now_iso(),
         "project_dir": str(project_dir),
         "dataset_path": str(dataset_path),
+        "corpus_input_dir": str(unified_input),
         "input_document_count": len(input_files),
         "question_count": len(questions),
         "dataset_error_count": len(dataset_errors),
@@ -608,14 +520,16 @@ def _query(client: Any, question: Question, requested_method: str) -> Any:
     return method, search(query=question.question)
 
 
-def _load_source_resolver(client: Any, project_dir: Path) -> SourceResolver:
+def _load_source_resolver(
+    client: Any,
+    corpus_dir: Path | None = None,
+) -> SourceResolver:
     from benchmark.baseline.microsoft_graphrag_client.data.data_loader import (
         DataLoader,
     )
 
     tables = DataLoader(client.config).load(["documents", "text_units"])
-    manifest_path = project_dir / MANIFEST_NAME
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = load_corpus_manifest(corpus_dir)
     documents = tables["documents"]
     text_units = tables["text_units"]
     if not isinstance(documents, pd.DataFrame) or not isinstance(
@@ -641,7 +555,7 @@ def evaluate(
     scoring_config_path: Path | None = None,
     judge_mode: str = "off",
     judge_model: str | None = None,
-    judge_api_key_env: str = "OPENAI_API_KEY",
+    judge_api_key_env: str | None = None,
     judge_api_base: str | None = None,
 ) -> dict[str, Any]:
     """查询数据集、计算三层指标并保存可审计结果。"""
@@ -665,6 +579,8 @@ def evaluate(
         )
     if judge_mode not in {"off", "optional", "required"}:
         raise BenchmarkPreflightError("judge-mode 必须为 off、optional 或 required")
+    # 未显式指定模型时读 JUDGE_COMPLETION_MODEL（含 benchmark/.env）。
+    judge_model = judge_model or judge_model_from_env()
     judge_config = (
         JudgeConfig(
             model=judge_model,
@@ -701,7 +617,7 @@ def evaluate(
         llm_overrides=llm_overrides,
         verbose=verbose,
     )
-    resolver = _load_source_resolver(client, project_dir)
+    resolver = _load_source_resolver(client)
     scoring_report = DatasetScoringReport()
     raw_results: list[dict[str, Any]] = []
     method_counts: Counter[str] = Counter()
@@ -755,7 +671,7 @@ def evaluate(
                 if judge_config is None:
                     judge_result = {
                         "model": judge_model or "",
-                        "error": "未提供 --judge-model，已回退 lexical",
+                        "error": "未提供 --judge-model 或 JUDGE_COMPLETION_MODEL，已回退 lexical",
                         "usage": {
                             **empty_usage(),
                             "failed_request_count": 1,
@@ -886,6 +802,15 @@ def _add_project_argument(parser: argparse.ArgumentParser) -> None:
         type=_path,
         default=DEFAULT_PROJECT_DIR,
         help="GraphRAG 项目目录",
+    )
+
+
+def _add_corpus_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--corpus-dir",
+        type=_path,
+        default=DEFAULT_CORPUS_DIR,
+        help="统一语料目录（与其他基线共用 input/ 与 corpus_manifest.json）",
     )
 
 
@@ -1051,6 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RAW_DIR,
     )
     _add_project_argument(prepare_parser)
+    _add_corpus_argument(prepare_parser)
     _add_dataset_argument(prepare_parser)
     prepare_parser.add_argument("--model", default="gpt-4.1")
     prepare_parser.add_argument(
@@ -1094,6 +1020,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="执行不联网的输入、凭据与索引检查",
     )
     _add_project_argument(preflight_parser)
+    _add_corpus_argument(preflight_parser)
     _add_dataset_argument(preflight_parser)
     preflight_parser.add_argument(
         "--require-index",
@@ -1105,6 +1032,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="通过 GraphRAGClient 构建索引",
     )
     _add_project_argument(index_parser)
+    _add_corpus_argument(index_parser)
     _add_dataset_argument(index_parser)
     _add_llm_override_arguments(index_parser)
     index_parser.add_argument(
@@ -1125,6 +1053,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="运行查询并生成评分报告",
     )
     _add_project_argument(evaluate_parser)
+    _add_corpus_argument(evaluate_parser)
     _add_dataset_argument(evaluate_parser)
     _add_llm_override_arguments(evaluate_parser)
     evaluate_parser.add_argument(
@@ -1153,9 +1082,21 @@ def build_parser() -> argparse.ArgumentParser:
         default="off",
         help="LLM-as-Judge；默认关闭，失败时回退 lexical",
     )
-    evaluate_parser.add_argument("--judge-model", default=None)
-    evaluate_parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
-    evaluate_parser.add_argument("--judge-api-base", default=None)
+    evaluate_parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Judge 模型名；缺省读 JUDGE_COMPLETION_MODEL",
+    )
+    evaluate_parser.add_argument(
+        "--judge-api-key-env",
+        default=None,
+        help="存放 Judge API key 的环境变量名；缺省依次尝试 JUDGE_API_KEY/OPENAI_API_KEY",
+    )
+    evaluate_parser.add_argument(
+        "--judge-api-base",
+        default=None,
+        help="Judge OpenAI-compatible base URL；缺省读 JUDGE_API_BASE/OPENAI_API_BASE",
+    )
     evaluate_parser.add_argument("--fail-fast", action="store_true")
     evaluate_parser.add_argument("--verbose", action="store_true")
 
@@ -1169,6 +1110,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RAW_DIR,
     )
     _add_project_argument(run_parser)
+    _add_corpus_argument(run_parser)
     _add_dataset_argument(run_parser)
     run_parser.add_argument(
         "--model",
@@ -1210,7 +1152,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="off",
     )
     run_parser.add_argument("--judge-model", default=None)
-    run_parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
+    run_parser.add_argument("--judge-api-key-env", default=None)
     run_parser.add_argument("--judge-api-base", default=None)
     return parser
 
@@ -1226,6 +1168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 model=args.model,
                 embedding_model=args.embedding_model,
                 top_k=args.k,
+                corpus_dir=args.corpus_dir,
                 model_env=args.model_env,
                 api_key_env=args.api_key_env,
                 api_base_env=args.api_base_env,
@@ -1234,7 +1177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 embedding_api_base_env=args.embedding_api_base_env,
             )
             result = {
-                "manifest_path": str(args.project_dir.resolve() / MANIFEST_NAME),
+                "manifest_path": str(corpus_manifest_path(args.corpus_dir)),
                 "pdf_count": manifest["pdf_count"],
                 "indexed_document_count": manifest["indexed_document_count"],
                 "duplicate_count": manifest["duplicate_count"],
@@ -1246,6 +1189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
                 require_index=args.require_index,
+                corpus_dir=args.corpus_dir,
             )
         elif args.command == "index":
             result = build_index(
@@ -1291,6 +1235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 model=args.model or DEFAULT_COMPLETION_MODEL,
                 embedding_model=(args.embedding_model or DEFAULT_EMBEDDING_MODEL),
                 top_k=args.k,
+                corpus_dir=args.corpus_dir,
                 model_env=args.model_env,
                 api_key_env=args.api_key_env,
                 api_base_env=args.api_base_env,

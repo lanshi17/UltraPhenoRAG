@@ -10,6 +10,7 @@ benchmark/
 ├── .env                  # 统一 LLM 供应商配置（RAG_* 变量，两个基线共用）
 ├── common/               # 两个基线共享的评测逻辑（不重复造轮子）
 │   ├── corpus.py         # PDF 提取、来源 ID 映射、manifest 写入
+│   ├── unified_corpus.py # 统一语料目录（data/corpus）提取与读取
 │   ├── usage.py          # token/成本统计聚合
 │   ├── answers.py        # 回答归一化、拒答/转诊检测、语句支持判定
 │   ├── retrieval.py      # 检索上下文抽取（DataFrame/list 双兼容）
@@ -19,13 +20,27 @@ benchmark/
 ├── baseline/
 │   ├── microsoft_graphrag_client/   # Microsoft GraphRAG 客户端 + 评测入口
 │   └── light_rag_client/            # LightRAG 客户端 + 评测入口
-├── data/                 # 语料与索引产物（不入库）
-└── results/              # 评测结果（JSON/JSONL）
+├── data/
+│   ├── corpus/           # ★ 统一输入语料：input/ + corpus_manifest.json
+│   ├── microsoft_graphrag/  # GraphRAG 专属索引产物（output/、cache/）
+│   └── light_rag/           # LightRAG 专属索引产物（rag_storage/）
+└── results/              # 评测结果（按基线分子目录）
 tests/                    # pytest 测试（与源码结构对应）
 ├── conftest.py           # sys.path 与 vendored LightRAG 引导
 ├── test_common_*.py      # 共享模块单元测试
 └── baseline/             # 各基线的行为/冒烟测试
 ```
+
+### 统一输入输出
+
+- **输入统一**：`benchmark/data/corpus/input/` 是唯一语料目录。`prepare`
+  对两个基线均提取 PDF 到此处；Microsoft GraphRAG 通过
+  `settings.yaml` 的 `input_storage.base_dir` 指向该目录，LightRAG 在
+  索引时自动回退到该目录（各基线自己的 `input/` 若存在则优先）。
+- **清单统一**：`data/corpus/corpus_manifest.json` 为唯一来源清单，
+  评测时的 `SourceResolver` 均从统一清单解析。
+- **输出统一**：评测结果统一写 `benchmark/results/<baseline>/`，
+  向量化产物写 `benchmark/data/proceed/`，索引产物留在各基线目录。
 
 运行测试：`uv run --with pytest python -m pytest tests/ -v`
 
@@ -142,6 +157,7 @@ MY_EMBED_BASE=https://your-gateway.example.com/v1
 ```bash
 uv run python -m benchmark.baseline.microsoft_graphrag_client.vectorize \
     --project-dir benchmark/data/microsoft_graphrag \
+    --corpus-dir benchmark/data/corpus \
     --output-dir benchmark/data/proceed
 ```
 

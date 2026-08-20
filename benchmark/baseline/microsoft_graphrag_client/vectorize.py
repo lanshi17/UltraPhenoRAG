@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 from datetime import UTC, datetime
@@ -46,6 +45,7 @@ from benchmark.baseline.microsoft_graphrag_client.config.llm_config import (
 from benchmark.baseline.microsoft_graphrag_client.utils.async_runner import (
     AsyncRunner,
 )
+from benchmark.common.unified_corpus import DEFAULT_CORPUS_DIR, read_corpus_documents
 from benchmark.config import load_environment
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -56,33 +56,11 @@ MANIFEST_NAME = "vectorize_manifest.json"
 VECTORS_NAME = "corpus_vectors.parquet"
 JSONL_NAME = "corpus_vectors.jsonl"
 
-_SOURCE_ID_PATTERN = re.compile(r"(?m)^SOURCE_ID:\s*(\S+)\s*$")
 _ENCODING_MODEL = "o200k_base"
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _source_id_from_text(text: str) -> str | None:
-    match = _SOURCE_ID_PATTERN.search(text)
-    return match.group(1) if match else None
-
-
-def _read_documents(project_dir: Path) -> list[tuple[str, Path, str]]:
-    """读取项目 ``input/`` 下的知识库文本，返回 (source_id, path, text)。"""
-    input_dir = project_dir / "input"
-    if not input_dir.is_dir():
-        raise FileNotFoundError(f"知识库输入目录不存在: {input_dir}")
-
-    documents: list[tuple[str, Path, str]] = []
-    for path in sorted(input_dir.glob("*.txt"), key=lambda p: p.name.casefold()):
-        text = path.read_text(encoding="utf-8")
-        source_id = _source_id_from_text(text) or path.stem
-        documents.append((source_id, path, text))
-    if not documents:
-        raise FileNotFoundError(f"知识库输入目录中没有文本文件: {input_dir}")
-    return documents
 
 
 def _chunk_text(
@@ -129,6 +107,7 @@ def vectorize_corpus(
     *,
     project_dir: Path,
     output_dir: Path,
+    corpus_dir: Path | None = None,
     chunk_size: int = 1200,
     overlap: int = 100,
     batch_size: int = 16,
@@ -138,7 +117,7 @@ def vectorize_corpus(
     api_base: str | None = None,
     api_key_env: str | None = None,
 ) -> dict[str, Any]:
-    """向量化知识库语料并保存到 output_dir。"""
+    """向量化统一语料并保存到 output_dir。"""
     project_dir = project_dir.resolve()
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -163,7 +142,7 @@ def vectorize_corpus(
     embedding = create_embedding(model_config)
     encoding = tiktoken.get_encoding(_ENCODING_MODEL)
 
-    documents = _read_documents(project_dir)
+    documents = read_corpus_documents(corpus_dir)
     if limit is not None:
         documents = documents[:limit]
 
@@ -266,6 +245,7 @@ def vectorize_corpus(
     manifest = {
         "created_at": _now_iso(),
         "project_dir": str(project_dir),
+        "corpus_dir": str((corpus_dir or DEFAULT_CORPUS_DIR).resolve()),
         "output_dir": str(output_dir),
         "embedding_model": embedding_model,
         "embedding_api_base": api_base,
@@ -301,7 +281,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-dir",
         type=Path,
         default=DEFAULT_PROJECT_DIR,
-        help="GraphRAG 项目目录（含 input/ 与 settings.yaml）",
+        help="GraphRAG 项目目录（含 settings.yaml，用于解析 embedding 配置）",
+    )
+    parser.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=DEFAULT_CORPUS_DIR,
+        help="统一语料目录（读取 corpus/input 下的文本）",
     )
     parser.add_argument(
         "--output-dir",
@@ -368,6 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = vectorize_corpus(
             project_dir=args.project_dir,
             output_dir=args.output_dir,
+            corpus_dir=args.corpus_dir,
             chunk_size=args.chunk_size,
             overlap=args.overlap,
             batch_size=args.batch_size,

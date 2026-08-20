@@ -46,7 +46,13 @@ from benchmark.qa.build_dataset import (
     stratified_split,
     validate_dataset,
 )
-from benchmark.qa.judge import JudgeConfig, judge_answer
+from benchmark.qa.judge import (
+    DEFAULT_JUDGE_MODEL,
+    JUDGE_ENVIRONMENT,
+    JudgeConfig,
+    judge_answer,
+    judge_model_from_env,
+)
 from benchmark.qa.models import (
     AnnotationRecord,
     DatasetSplit,
@@ -55,10 +61,10 @@ from benchmark.qa.models import (
     Question,
 )
 from benchmark.qa.schema import (
+    GUIDELINE_REGISTRY,
     DifficultyLevel,
     EntityType,
     EvidenceLevel,
-    GUIDELINE_REGISTRY,
     QuestionType,
     RAGArchType,
     RelationType,
@@ -69,8 +75,8 @@ from benchmark.qa.scoring import (
     JudgeMetrics,
     RetrievalMetrics,
     SafetyMetrics,
-    SourceMatchMetrics,
     ScoringResult,
+    SourceMatchMetrics,
     compute_answer_correctness,
     compute_completeness,
     compute_faithfulness,
@@ -112,6 +118,9 @@ __all__ = [
     "compute_source_match",
     "JudgeConfig",
     "judge_answer",
+    "judge_model_from_env",
+    "JUDGE_ENVIRONMENT",
+    "DEFAULT_JUDGE_MODEL",
     # Annotation Agreement
     "cohens_kappa",
     "fleiss_kappa",

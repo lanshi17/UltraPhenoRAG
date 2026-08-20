@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import time
@@ -21,9 +20,7 @@ from benchmark.baseline.light_rag_client.config.llm_config import (
     ModelConfigOverride,
 )
 from benchmark.common import (
-    MANIFEST_NAME,
     aggregate_usage,
-    canonical_source_id,
     empty_usage,
     extract_retrieved_context,
     load_scoring_options,
@@ -34,14 +31,23 @@ from benchmark.common import (
     safety_actions,
     source_id_from_text,
     supported_statements,
-    write_manifest,
 )
 from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
+from benchmark.common.unified_corpus import (
+    DEFAULT_CORPUS_DIR,
+    corpus_input_dir,
+    corpus_manifest_path,
+    load_corpus_manifest,
+)
+from benchmark.common.unified_corpus import (
+    DEFAULT_RAW_DIR as UNIFIED_RAW_DIR,
+)
 from benchmark.qa import (
     DatasetScoringReport,
     JudgeConfig,
     compute_dataset_fingerprint,
     judge_answer,
+    judge_model_from_env,
     load_questions,
     score_question,
     validate_dataset,
@@ -88,7 +94,11 @@ def prepare_corpus(
 
 
 def preflight(
-    *, project_dir: Path, dataset_path: Path, require_index: bool = False
+    *,
+    project_dir: Path,
+    dataset_path: Path,
+    require_index: bool = False,
+    corpus_dir: Path | None = None,
 ) -> dict[str, Any]:
     project_dir = project_dir.resolve()
     dataset_path = dataset_path.resolve()
@@ -107,15 +117,10 @@ def preflight(
             for question_id, errors in dataset_errors.items()
             for error in errors
         )
-    input_files = (
-        sorted((project_dir / "input").glob("*.txt"))
-        if (project_dir / "input").is_dir()
-        else []
-    )
+    unified_input = corpus_input_dir(corpus_dir or DEFAULT_CORPUS_DIR)
+    input_files = sorted(unified_input.glob("*.txt"))
     if not input_files:
-        issues.append(
-            f"no LightRAG input text files found under {project_dir / 'input'}"
-        )
+        issues.append(f"统一语料目录中没有文本文件: {unified_input}")
     storage_dir = project_dir / "rag_storage"
     storage_markers = (
         "vdb_chunks.json",
@@ -132,13 +137,14 @@ def preflight(
     )
     if missing_index:
         issues.append(f"LightRAG index is missing under {storage_dir}")
-    manifest_path = project_dir / MANIFEST_NAME
-    if not manifest_path.is_file():
-        warnings.append(f"manifest is missing: {manifest_path}")
+    unified_manifest = corpus_manifest_path(corpus_dir or DEFAULT_CORPUS_DIR)
+    if not unified_manifest.is_file():
+        warnings.append(f"统一语料清单缺失: {unified_manifest}")
     return {
         "checked_at": now_iso(),
         "project_dir": str(project_dir),
         "dataset_path": str(dataset_path),
+        "corpus_input_dir": str(unified_input),
         "input_document_count": len(input_files),
         "question_count": len(questions),
         "issues": issues,
@@ -278,7 +284,7 @@ def evaluate(
     scoring_config_path: Path | None = None,
     judge_mode: str = "off",
     judge_model: str | None = None,
-    judge_api_key_env: str = "OPENAI_API_KEY",
+    judge_api_key_env: str | None = None,
     judge_api_base: str | None = None,
 ) -> dict[str, Any]:
     """Query the dataset, compute three-layer metrics, and save auditable results."""
@@ -295,6 +301,8 @@ def evaluate(
         )
     if judge_mode not in {"off", "optional", "required"}:
         raise BenchmarkPreflightError("judge-mode must be off, optional, or required")
+    # 未显式指定模型时读 JUDGE_COMPLETION_MODEL（含 benchmark/.env）。
+    judge_model = judge_model or judge_model_from_env()
     judge_config = (
         JudgeConfig(
             model=judge_model,
@@ -326,17 +334,17 @@ def evaluate(
     ).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path = output_path.with_suffix(".jsonl")
-    manifest_path = project_dir / MANIFEST_NAME
-    if manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    else:
+    # 统一语料清单优先；缺失时回退到从 input 文件名推断。
+    manifest = load_corpus_manifest()
+    if not manifest.get("documents"):
+        unified_input = corpus_input_dir()
         manifest = {
             "documents": [
                 {
                     "source_id": safe_slug(path.stem.split("--", 1)[0]),
-                    "input_file": str(path.relative_to(project_dir)),
+                    "input_file": path.name,
                 }
-                for path in sorted((project_dir / "input").glob("*.txt"))
+                for path in sorted(unified_input.glob("*.txt"))
             ]
         }
     resolver = SourceResolver(manifest)
@@ -377,7 +385,7 @@ def evaluate(
                     if judge_config is None:
                         judge_result = {
                             "model": judge_model or "",
-                            "error": "no --judge-model provided, fell back to lexical",
+                            "error": "no --judge-model or JUDGE_COMPLETION_MODEL provided, fell back to lexical",
                             "usage": {
                                 **empty_usage(),
                                 "failed_request_count": 1,
@@ -610,6 +618,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     prepare = sub.add_parser("prepare")
     prepare.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    prepare.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=DEFAULT_CORPUS_DIR,
+        help="统一语料目录（与其他基线共用 input/ 与 corpus_manifest.json）",
+    )
     prepare.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     preflight_parser = sub.add_parser("preflight")
     preflight_parser.add_argument(
@@ -617,6 +631,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     preflight_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     preflight_parser.add_argument("--require-index", action="store_true")
+    preflight_parser.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=DEFAULT_CORPUS_DIR,
+        help="统一语料目录",
+    )
     index = sub.add_parser("index")
     index.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     index.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
@@ -659,14 +679,32 @@ def build_parser() -> argparse.ArgumentParser:
         default="off",
         help="LLM-as-Judge; default off, falls back to lexical on failure",
     )
-    evaluate_parser.add_argument("--judge-model", default=None)
-    evaluate_parser.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
-    evaluate_parser.add_argument("--judge-api-base", default=None)
+    evaluate_parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Judge 模型名；缺省读 JUDGE_COMPLETION_MODEL",
+    )
+    evaluate_parser.add_argument(
+        "--judge-api-key-env",
+        default=None,
+        help="存放 Judge API key 的环境变量名；缺省依次尝试 JUDGE_API_KEY/OPENAI_API_KEY",
+    )
+    evaluate_parser.add_argument(
+        "--judge-api-base",
+        default=None,
+        help="Judge OpenAI-compatible base URL；缺省读 JUDGE_API_BASE/OPENAI_API_BASE",
+    )
     evaluate_parser.add_argument("--fail-fast", action="store_true")
     evaluate_parser.add_argument("--verbose", action="store_true")
     _add_llm_override_arguments(evaluate_parser)
     run = sub.add_parser("run")
     run.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    run.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=DEFAULT_CORPUS_DIR,
+        help="统一语料目录（与其他基线共用 input/ 与 corpus_manifest.json）",
+    )
     run.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     run.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     run.add_argument(
@@ -701,7 +739,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="off",
     )
     run.add_argument("--judge-model", default=None)
-    run.add_argument("--judge-api-key-env", default="OPENAI_API_KEY")
+    run.add_argument("--judge-api-key-env", default=None)
     run.add_argument("--judge-api-base", default=None)
     return parser
 
@@ -711,12 +749,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         llm_overrides = _llm_overrides_from_args(args)
         if args.command == "prepare":
-            result = prepare_corpus(raw_dir=args.raw_dir, project_dir=args.project_dir)
+            result = prepare_corpus(
+                raw_dir=args.raw_dir,
+                project_dir=args.project_dir,
+                corpus_dir=args.corpus_dir,
+            )
         elif args.command == "preflight":
             result = preflight(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
                 require_index=args.require_index,
+                corpus_dir=args.corpus_dir,
             )
         elif args.command == "index":
             result = build_index(
@@ -727,7 +770,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 llm_overrides=llm_overrides,
             )
         elif args.command == "run":
-            prepare_corpus(raw_dir=args.raw_dir, project_dir=args.project_dir)
+            prepare_corpus(
+                raw_dir=args.raw_dir,
+                project_dir=args.project_dir,
+                corpus_dir=args.corpus_dir,
+            )
             index_result = build_index(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,

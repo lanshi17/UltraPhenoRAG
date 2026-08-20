@@ -14,6 +14,11 @@ class DocumentRecord:
 
 
 def load_documents(root_dir: Path, input_documents: Any = None) -> list[DocumentRecord]:
+    """Load documents from an iterable, a DataFrame, or the filesystem.
+
+    When ``input_documents`` is None the unified corpus input directory is
+    preferred (see :func:`_resolve_input_directory`).
+    """
     records: list[DocumentRecord] = []
     if input_documents is not None:
         rows = (
@@ -40,11 +45,30 @@ def load_documents(root_dir: Path, input_documents: Any = None) -> list[Document
             )
             records.append(DocumentRecord(document_id, text, title or document_id))
         return records
-    input_dir = root_dir / "input"
-    directory = input_dir if input_dir.is_dir() else root_dir
+
+    directory = _resolve_input_directory(root_dir)
     for path in sorted(directory.iterdir()):
         if path.is_file() and path.suffix.casefold() in {".txt", ".md"}:
             text = path.read_text(encoding="utf-8").strip()
             if text:
                 records.append(DocumentRecord(path.stem, text, str(path.resolve())))
     return records
+
+
+def _resolve_input_directory(root_dir: Path) -> Path:
+    """Locate the input directory, preferring the unified corpus layout.
+
+    Resolution order:
+    1. ``<root_dir>/input`` when it exists and contains text files
+       (explicit per-baseline input wins, keeps tmp_path tests working).
+    2. The shared corpus directory ``<repo>/benchmark/data/corpus/input``.
+    3. ``root_dir`` itself (legacy behaviour for loose directories).
+    """
+    candidate = root_dir / "input"
+    if candidate.is_dir() and any(candidate.glob("*.txt")):
+        return candidate
+    # root_dir 形如 .../benchmark/data/light_rag
+    unified = root_dir.parent / "corpus" / "input"
+    if unified.is_dir() and any(unified.glob("*.txt")):
+        return unified
+    return candidate if candidate.is_dir() else root_dir

@@ -22,6 +22,7 @@ benchmark/data
 !.env.example
 !benchmark/.env.example
 benchmark/data/raw
+benchmark/data/corpus
 benchmark/data/microsoft_graphrag/cache
 benchmark/data/microsoft_graphrag/output
 benchmark/data/microsoft_graphrag/logs
