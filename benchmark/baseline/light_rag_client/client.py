@@ -242,7 +242,7 @@ class LightRAGClient:
             from lightrag.llm.openai import openai_embed
 
             func = partial(
-                openai_embed,
+                openai_embed.func,
                 model=model,
                 base_url=environment.api_base or None,
                 api_key=environment.api_key,

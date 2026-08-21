@@ -195,9 +195,10 @@ def judge_answer(
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
             ],
-            "temperature": 0,
             "response_format": {"type": "json_object"},
         }
+        if not model.startswith("gpt-5"):
+            kwargs["temperature"] = 0
         if api_base:
             kwargs["api_base"] = api_base
         response = litellm.completion(**kwargs)

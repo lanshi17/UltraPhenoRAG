@@ -8,6 +8,7 @@ import numpy as np
 from lightrag.utils import EmbeddingFunc
 
 from benchmark.baseline.light_rag_client import LightRAGClient
+from benchmark.baseline.light_rag_client.benchmark import preflight
 
 
 async def _embedding(texts: list[str]) -> np.ndarray:
@@ -66,3 +67,26 @@ def test_real_index_and_all_query_modes(tmp_path: Path) -> None:
             assert result.method == ("drift" if method == "drift" else method)
     finally:
         client.close()
+
+
+def test_preflight_rejects_empty_vector_index(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "corpus"
+    input_dir = corpus_dir / "input"
+    input_dir.mkdir(parents=True)
+    (input_dir / "guide.txt").write_text("guide", encoding="utf-8")
+    storage_dir = tmp_path / "rag_storage" / "light_rag"
+    storage_dir.mkdir(parents=True)
+    (storage_dir / "kv_store_text_chunks.json").write_text("{}", encoding="utf-8")
+    (storage_dir / "vdb_chunks.json").write_text("{}", encoding="utf-8")
+    dataset_path = tmp_path / "questions.json"
+    dataset_path.write_text("[]", encoding="utf-8")
+
+    report = preflight(
+        project_dir=tmp_path,
+        dataset_path=dataset_path,
+        corpus_dir=corpus_dir,
+        require_index=True,
+    )
+
+    assert not report["ready"]
+    assert any("no persisted vectors" in issue for issue in report["issues"])

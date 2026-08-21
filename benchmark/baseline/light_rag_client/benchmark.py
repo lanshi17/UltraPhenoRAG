@@ -137,6 +137,14 @@ def preflight(
     )
     if missing_index:
         issues.append(f"LightRAG index is missing under {storage_dir}")
+    if require_index and not missing_index:
+        vector_files = [
+            path
+            for path in storage_dir.rglob("vdb_*.json")
+            if path.is_file() and path.stat().st_size > 2
+        ]
+        if not vector_files:
+            issues.append(f"LightRAG index has no persisted vectors under {storage_dir}")
     unified_manifest = corpus_manifest_path(corpus_dir or DEFAULT_CORPUS_DIR)
     if not unified_manifest.is_file():
         warnings.append(f"统一语料清单缺失: {unified_manifest}")
