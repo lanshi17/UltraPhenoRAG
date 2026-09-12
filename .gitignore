@@ -29,3 +29,13 @@ benchmark/data/microsoft_graphrag/logs
 benchmark/data/microsoft_graphrag/input
 benchmark/data/microsoft_graphrag/benchmark
 benchmark/data/light_rag/input/
+# Local credentials and generated benchmark artifacts
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+benchmark/data/hipporag/
+benchmark/data/kag/
+benchmark/data/path_rag/
+benchmark/data/light_rag/rag_storage*/
+benchmark/results/
