@@ -1,41 +1,27 @@
-# Python-generated files
+# Python and build artifacts
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-
-# Virtual environments
-.venv
-benchmark/baseline/libs
+.venv/
+benchmark/baseline/libs/
 *.log
 
-# 保留项目级示例配置，真实数据和密钥仍保持忽略
-benchmark/data
-!benchmark/data/
-!benchmark/data/microsoft_graphrag/
-!benchmark/data/microsoft_graphrag/settings.yaml
-!benchmark/data/microsoft_graphrag/prompts/
-!benchmark/data/microsoft_graphrag/corpus_manifest.json
+# Local credentials (keep example configuration)
 **/.env
-!.env.example
-!benchmark/.env.example
-benchmark/data/raw
-benchmark/data/corpus
-benchmark/data/microsoft_graphrag/cache
-benchmark/data/microsoft_graphrag/output
-benchmark/data/microsoft_graphrag/logs
-benchmark/data/microsoft_graphrag/input
-benchmark/data/microsoft_graphrag/benchmark
-benchmark/data/light_rag/input/
-# Local credentials and generated benchmark artifacts
 **/.env.*
 !**/.env.example
 *.pem
 *.key
-benchmark/data/hipporag/
-benchmark/data/kag/
-benchmark/data/path_rag/
-benchmark/data/light_rag/rag_storage*/
-benchmark/results/
+
+# Runtime data: only lightweight configuration and prompts are versioned
+/benchmark/data/*
+!/benchmark/data/microsoft_graphrag/
+/benchmark/data/microsoft_graphrag/*
+!/benchmark/data/microsoft_graphrag/settings.yaml
+!/benchmark/data/microsoft_graphrag/prompts/
+
+# Generated evaluation output; keep report source code and Markdown summaries
+/benchmark/results/
