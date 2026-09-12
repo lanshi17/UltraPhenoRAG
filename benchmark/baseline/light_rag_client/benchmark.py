@@ -32,6 +32,7 @@ from benchmark.common import (
     source_id_from_text,
     supported_statements,
 )
+from benchmark.common.benchmark_protocol import build_benchmark_conditions
 from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
 from benchmark.common.unified_corpus import (
     DEFAULT_CORPUS_DIR,
@@ -144,7 +145,9 @@ def preflight(
             if path.is_file() and path.stat().st_size > 2
         ]
         if not vector_files:
-            issues.append(f"LightRAG index has no persisted vectors under {storage_dir}")
+            issues.append(
+                f"LightRAG index has no persisted vectors under {storage_dir}"
+            )
     unified_manifest = corpus_manifest_path(corpus_dir or DEFAULT_CORPUS_DIR)
     if not unified_manifest.is_file():
         warnings.append(f"统一语料清单缺失: {unified_manifest}")
@@ -173,11 +176,16 @@ def build_index(
     *,
     project_dir: Path,
     dataset_path: Path,
+    corpus_dir: Path | None = None,
     cache: bool = True,
     verbose: bool = False,
     llm_overrides: LLMConfigOverrides | None = None,
 ) -> dict[str, Any]:
-    report = preflight(project_dir=project_dir, dataset_path=dataset_path)
+    report = preflight(
+        project_dir=project_dir,
+        dataset_path=dataset_path,
+        corpus_dir=corpus_dir,
+    )
     _require_preflight(report)
     started = time.monotonic()
     client = LightRAGClient(project_dir, llm_overrides=llm_overrides, verbose=verbose)
@@ -190,6 +198,36 @@ def build_index(
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "document_count": len(result.outputs),
             "errors": result.errors,
+            "telemetry": result.telemetry,
+        }
+    finally:
+        client.close()
+
+
+def retry_failed(
+    *,
+    project_dir: Path,
+    dataset_path: Path,
+    corpus_dir: Path | None = None,
+    verbose: bool = False,
+    llm_overrides: LLMConfigOverrides | None = None,
+) -> dict[str, Any]:
+    report = preflight(
+        project_dir=project_dir,
+        dataset_path=dataset_path,
+        corpus_dir=corpus_dir,
+        require_index=True,
+    )
+    _require_preflight(report)
+    started = time.monotonic()
+    client = LightRAGClient(project_dir, llm_overrides=llm_overrides, verbose=verbose)
+    try:
+        retried_document_count = client.retry_failed()
+        return {
+            "completed_at": now_iso(),
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "retried_document_count": retried_document_count,
+            "telemetry": {},
         }
     finally:
         client.close()
@@ -280,6 +318,7 @@ def evaluate(
     *,
     project_dir: Path,
     dataset_path: Path,
+    corpus_dir: Path | None = None,
     requested_method: str = "adaptive",
     k: int = 16,
     output_path: Path | None = None,
@@ -297,7 +336,10 @@ def evaluate(
 ) -> dict[str, Any]:
     """Query the dataset, compute three-layer metrics, and save auditable results."""
     report = preflight(
-        project_dir=project_dir, dataset_path=dataset_path, require_index=True
+        project_dir=project_dir,
+        dataset_path=dataset_path,
+        require_index=True,
+        corpus_dir=corpus_dir,
     )
     _require_preflight(report)
     questions = load_questions(dataset_path)
@@ -334,6 +376,19 @@ def evaluate(
         questions = questions[:limit]
     if not questions:
         raise BenchmarkPreflightError("no questions selected")
+    resolved_scoring_config = (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
+    benchmark_conditions = build_benchmark_conditions(
+        dataset_path=dataset_path,
+        corpus_dir=corpus_dir,
+        question_ids=[question.question_id for question in questions],
+        requested_method=requested_method,
+        k=k,
+        source_match_mode=selected_source_mode,
+        scoring_config_path=resolved_scoring_config,
+        judge_mode=judge_mode,
+        judge_model=judge_model,
+        llm_overrides=llm_overrides,
+    )
     project_dir = project_dir.resolve()
     output_path = (
         output_path
@@ -343,9 +398,9 @@ def evaluate(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     raw_path = output_path.with_suffix(".jsonl")
     # 统一语料清单优先；缺失时回退到从 input 文件名推断。
-    manifest = load_corpus_manifest()
+    manifest = load_corpus_manifest(corpus_dir)
     if not manifest.get("documents"):
-        unified_input = corpus_input_dir()
+        unified_input = corpus_input_dir(corpus_dir)
         manifest = {
             "documents": [
                 {
@@ -462,6 +517,7 @@ def evaluate(
             "project_dir": str(project_dir),
             "dataset_path": str(dataset_path.resolve()),
             "dataset_fingerprint": compute_dataset_fingerprint(questions),
+            "benchmark_conditions": benchmark_conditions,
             "requested_search_method": requested_method,
             "actual_search_methods": dict(method_counts),
             "k": k,
@@ -500,9 +556,7 @@ def evaluate(
             "judge_mode": judge_mode,
             "judge_model": judge_model,
             "source_match_mode": selected_source_mode,
-            "scoring_config_path": str(
-                (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
-            ),
+            "scoring_config_path": str(resolved_scoring_config),
         },
         "preflight": report,
         "summary": summary,
@@ -648,14 +702,26 @@ def build_parser() -> argparse.ArgumentParser:
     index = sub.add_parser("index")
     index.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
     index.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    index.add_argument("--corpus-dir", type=Path, default=DEFAULT_CORPUS_DIR)
     index.add_argument("--no-cache", action="store_true")
     index.add_argument("--verbose", action="store_true")
     _add_llm_override_arguments(index)
+    retry_failed_parser = sub.add_parser("retry-failed")
+    retry_failed_parser.add_argument(
+        "--project-dir", type=Path, default=DEFAULT_PROJECT_DIR
+    )
+    retry_failed_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    retry_failed_parser.add_argument(
+        "--corpus-dir", type=Path, default=DEFAULT_CORPUS_DIR
+    )
+    retry_failed_parser.add_argument("--verbose", action="store_true")
+    _add_llm_override_arguments(retry_failed_parser)
     evaluate_parser = sub.add_parser("evaluate")
     evaluate_parser.add_argument(
         "--project-dir", type=Path, default=DEFAULT_PROJECT_DIR
     )
     evaluate_parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    evaluate_parser.add_argument("--corpus-dir", type=Path, default=DEFAULT_CORPUS_DIR)
     evaluate_parser.add_argument(
         "--method",
         choices=(
@@ -773,7 +839,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = build_index(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 cache=not args.no_cache,
+                verbose=args.verbose,
+                llm_overrides=llm_overrides,
+            )
+        elif args.command == "retry-failed":
+            result = retry_failed(
+                project_dir=args.project_dir,
+                dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 verbose=args.verbose,
                 llm_overrides=llm_overrides,
             )
@@ -786,6 +861,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             index_result = build_index(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 cache=not args.no_cache,
                 verbose=args.verbose,
                 llm_overrides=llm_overrides,
@@ -793,6 +869,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evaluation = evaluate(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 requested_method=args.method,
                 k=args.k,
                 output_path=args.output,
@@ -815,6 +892,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evaluation = evaluate(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 requested_method=args.method,
                 k=args.k,
                 output_path=args.output,

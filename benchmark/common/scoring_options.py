@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 
 DEFAULT_SCORING_CONFIG = (
-    Path(__file__).resolve().parents[2] / "qa" / "dataset" / "scoring_config.yaml"
+    Path(__file__).resolve().parents[1] / "qa" / "dataset" / "scoring_config.yaml"
 )
 
 DEFAULT_SOURCE_MATCH_MODE = "hybrid"

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from benchmark.common.scoring_options import load_scoring_options
+from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG, load_scoring_options
 
 
 class TestLoadScoringOptions:
+    def test_default_config_exists(self) -> None:
+        assert DEFAULT_SCORING_CONFIG.is_file()
+
     def test_missing_file_falls_back_to_hybrid(self, tmp_path: Path) -> None:
         options = load_scoring_options(tmp_path / "missing.yaml")
 

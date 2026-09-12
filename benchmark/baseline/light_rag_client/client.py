@@ -15,10 +15,12 @@ from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from benchmark.config import RAG_ENVIRONMENT, load_environment
 
 from .constants import DEFAULT_CHUNK_TOP_K, DEFAULT_RESPONSE_TYPE, DEFAULT_TOP_K
+from .cost_analysis import OperationUsageTracker
 from .dependency import ensure_light_rag_import_path
 from .documents import load_documents
 from .event_loop import EventLoopRunner
@@ -36,6 +38,8 @@ from .models import IndexResult, QueryResult  # noqa: E402
 logger = logging.getLogger(__name__)
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_active_llm_func: Callable[..., Any] | None = None
+_active_usage_tracker: OperationUsageTracker | None = None
 
 
 def _override_value(override: Any, name: str) -> Any:
@@ -52,6 +56,22 @@ def _response_text(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+async def _tracked_llm(*args: Any, **kwargs: Any) -> Any:
+    llm_func = _active_llm_func
+    if llm_func is None:
+        raise RuntimeError("LightRAG LLM telemetry context is not active")
+    tracker = _active_usage_tracker
+    if tracker is not None:
+        tracker.start_request()
+        kwargs["token_tracker"] = tracker
+    try:
+        return await llm_func(*args, **kwargs)
+    except Exception:
+        if tracker is not None:
+            tracker.fail_request()
+        raise
 
 
 class LightRAGClient:
@@ -100,6 +120,7 @@ class LightRAGClient:
         self._rag_options = dict(rag_options)
         self._rag: LightRAG | None = None
         self._runner: EventLoopRunner | None = None
+        self._usage_tracker: OperationUsageTracker | None = None
         self._closed = False
         self._state = ClientState.CREATED
 
@@ -254,12 +275,11 @@ class LightRAGClient:
         )
 
     def _make_rag(self) -> LightRAG:
-        llm_func = self._llm_model_func or self._default_llm
         embedding = self._embedding_func or self._default_embedding()
         options = {
             "working_dir": str(self._data_dir),
             "workspace": self._workspace,
-            "llm_model_func": llm_func,
+            "llm_model_func": _tracked_llm,
             "embedding_func": embedding,
             "top_k": self._top_k,
             "chunk_top_k": self._chunk_top_k,
@@ -268,6 +288,11 @@ class LightRAGClient:
         if self.verbose:
             options.setdefault("log_level", logging.DEBUG)
         return LightRAG(**options)
+
+    def _begin_usage_tracking(self) -> OperationUsageTracker:
+        tracker = OperationUsageTracker(load_environment().completion_model)
+        self._usage_tracker = tracker
+        return tracker
 
     async def _ensure_rag_async(self) -> LightRAG:
         if self._closed:
@@ -323,6 +348,47 @@ class LightRAGClient:
             ]
         )
 
+    async def _retry_failed_async(self) -> int:
+        from lightrag.base import DocStatus
+        from lightrag.kg.shared_storage import (
+            commit_manual_retry_request,
+            get_namespace_data,
+            get_namespace_lock,
+            get_pipeline_ingress,
+        )
+
+        rag = await self._ensure_rag_async()
+        failed_before = await rag.doc_status.get_docs_by_statuses(
+            [DocStatus.FAILED], strict=True
+        )
+        if not failed_before:
+            return 0
+
+        pipeline_status = await get_namespace_data(
+            "pipeline_status", workspace=rag.workspace
+        )
+        pipeline_status_lock = get_namespace_lock(
+            "pipeline_status", workspace=rag.workspace
+        )
+        ingress = await get_pipeline_ingress(rag.workspace)
+        request_id = uuid4().hex
+        state: dict[str, bool] = {}
+        refusal = await commit_manual_retry_request(
+            pipeline_status,
+            pipeline_status_lock,
+            ingress,
+            request_id,
+            state,
+        )
+        if refusal is not None:
+            raise RuntimeError(f"failed to request LightRAG retry: {refusal}")
+
+        await rag.apipeline_process_enqueue_documents()
+        failed_after = await rag.doc_status.get_docs_by_statuses(
+            [DocStatus.FAILED], strict=True
+        )
+        return len(failed_before) - len(failed_after)
+
     def index(
         self,
         method: str | IndexMethod = IndexMethod.STANDARD,
@@ -348,8 +414,22 @@ class LightRAGClient:
         documents = load_documents(self._root_dir, input_documents)
         if dry_run:
             return IndexResult(outputs=documents)
-        result = self._run(self._index_async(documents, cache))
-        return result
+        tracker = self._begin_usage_tracking()
+        global _active_llm_func, _active_usage_tracker
+        _active_llm_func = self._llm_model_func or self._default_llm
+        _active_usage_tracker = tracker
+        try:
+            result = self._run(self._index_async(documents, cache))
+            result.telemetry = tracker.telemetry()
+            return result
+        finally:
+            _active_usage_tracker = None
+            _active_llm_func = None
+            self._usage_tracker = None
+
+    def retry_failed(self) -> int:
+        """Retry failed LightRAG documents using its manual recovery protocol."""
+        return self._run(self._retry_failed_async())
 
     def _resolve_mode(self, method: str | SearchMethod) -> tuple[str, str]:
         return resolve_search_method(method)
@@ -379,10 +459,19 @@ class LightRAGClient:
                 else self._rag_options.get("rerank_model_func") is not None
             ),
         )
-        if query_data_only:
-            payload = await rag.aquery_data(query, param=param)
-        else:
-            payload = await rag.aquery_llm(query, param=param)
+        tracker = self._begin_usage_tracking()
+        global _active_llm_func, _active_usage_tracker
+        _active_llm_func = self._llm_model_func or self._default_llm
+        _active_usage_tracker = tracker
+        try:
+            if query_data_only:
+                payload = await rag.aquery_data(query, param=param)
+            else:
+                payload = await rag.aquery_llm(query, param=param)
+        finally:
+            _active_usage_tracker = None
+            _active_llm_func = None
+            self._usage_tracker = None
         payload = payload if isinstance(payload, dict) else {}
         llm_response = payload.get("llm_response", {})
         response = (
@@ -406,6 +495,7 @@ class LightRAGClient:
             query=query,
             method=public_method,
             raw_data=payload,
+            telemetry=tracker.telemetry(),
         )
 
     def search(

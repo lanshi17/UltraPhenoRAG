@@ -52,6 +52,7 @@ from benchmark.qa.judge import (
     JudgeConfig,
     judge_answer,
     judge_model_from_env,
+    judge_safety,
 )
 from benchmark.qa.models import (
     AnnotationRecord,
@@ -119,6 +120,7 @@ __all__ = [
     "JudgeConfig",
     "judge_answer",
     "judge_model_from_env",
+    "judge_safety",
     "JUDGE_ENVIRONMENT",
     "DEFAULT_JUDGE_MODEL",
     # Annotation Agreement

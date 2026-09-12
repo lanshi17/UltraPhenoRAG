@@ -34,6 +34,7 @@ from benchmark.common import (
     source_id_from_text,
     supported_statements,
 )
+from benchmark.common.benchmark_protocol import build_benchmark_conditions
 from benchmark.common.scoring_options import DEFAULT_SCORING_CONFIG
 from benchmark.common.unified_corpus import (
     DEFAULT_CORPUS_DIR,
@@ -280,6 +281,9 @@ def preflight(
     """在任何远程模型调用前检查本地输入、凭据和索引产物。"""
     from graphrag.config.load_config import load_config
 
+    from benchmark.config import load_environment
+
+    load_environment()
     project_dir = project_dir.resolve()
     dataset_path = dataset_path.resolve()
     issues: list[str] = []
@@ -550,6 +554,7 @@ def evaluate(
     question_ids: Sequence[str],
     fail_fast: bool,
     verbose: bool,
+    corpus_dir: Path | None = None,
     llm_overrides: LLMConfigOverrides | None = None,
     source_match_mode: str | None = None,
     scoring_config_path: Path | None = None,
@@ -563,10 +568,13 @@ def evaluate(
 
     project_dir = project_dir.resolve()
     dataset_path = dataset_path.resolve()
+    if scoring_config_path is not None:
+        scoring_config_path = scoring_config_path.resolve()
     preflight_report = preflight(
         project_dir=project_dir,
         dataset_path=dataset_path,
         require_index=True,
+        corpus_dir=corpus_dir,
     )
     _require_preflight(preflight_report)
 
@@ -604,6 +612,19 @@ def evaluate(
         questions = questions[:limit]
     if not questions:
         raise BenchmarkPreflightError("筛选后没有待评测题目")
+    resolved_scoring_config = (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
+    benchmark_conditions = build_benchmark_conditions(
+        dataset_path=dataset_path,
+        corpus_dir=corpus_dir,
+        question_ids=[question.question_id for question in questions],
+        requested_method=requested_method,
+        k=k,
+        source_match_mode=selected_source_mode,
+        scoring_config_path=resolved_scoring_config,
+        judge_mode=judge_mode,
+        judge_model=judge_model,
+        llm_overrides=llm_overrides,
+    )
 
     if output_path is None:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -617,7 +638,7 @@ def evaluate(
         llm_overrides=llm_overrides,
         verbose=verbose,
     )
-    resolver = _load_source_resolver(client)
+    resolver = _load_source_resolver(client, corpus_dir)
     scoring_report = DatasetScoringReport()
     raw_results: list[dict[str, Any]] = []
     method_counts: Counter[str] = Counter()
@@ -740,6 +761,7 @@ def evaluate(
             "project_dir": str(project_dir),
             "dataset_path": str(dataset_path),
             "dataset_fingerprint": compute_dataset_fingerprint(questions),
+            "benchmark_conditions": benchmark_conditions,
             "requested_search_method": requested_method,
             "actual_search_methods": dict(method_counts),
             "k": k,
@@ -776,9 +798,7 @@ def evaluate(
             "judge_mode": judge_mode,
             "judge_model": judge_model,
             "source_match_mode": selected_source_mode,
-            "scoring_config_path": str(
-                (scoring_config_path or DEFAULT_SCORING_CONFIG).resolve()
-            ),
+            "scoring_config_path": str(resolved_scoring_config),
         },
         "preflight": preflight_report,
         "summary": summary,
@@ -1205,6 +1225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evaluation_result = evaluate(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 requested_method=args.method,
                 k=args.k,
                 output_path=args.output,
@@ -1255,6 +1276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evaluation_result = evaluate(
                 project_dir=args.project_dir,
                 dataset_path=args.dataset,
+                corpus_dir=args.corpus_dir,
                 requested_method=args.search_method,
                 k=args.k,
                 output_path=args.output,

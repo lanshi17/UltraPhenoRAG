@@ -13,6 +13,7 @@ class QueryResult:
     query: str = ""
     method: str = ""
     raw_data: dict[str, Any] = field(default_factory=dict)
+    telemetry: dict[str, Any] = field(default_factory=dict)
 
     @property
     def references(self) -> list[dict[str, Any]]:

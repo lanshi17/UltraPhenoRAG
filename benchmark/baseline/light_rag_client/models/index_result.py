@@ -11,6 +11,7 @@ class IndexResult:
     outputs: list[Any]
     errors: list[str] = field(default_factory=list)
     has_errors: bool = False
+    telemetry: dict[str, Any] = field(default_factory=dict)
 
     @property
     def workflow_names(self) -> list[str]:
